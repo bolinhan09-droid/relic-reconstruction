@@ -1,0 +1,35 @@
+const paths = {
+  garment:'M8 3 2 7l3 5 3-2v11h8V10l3 2 3-5-6-4c0 4-8 4-8 0Z',
+  image:'M3 3h18v18H3Z M3 17l6-7 4 4 3-4 5 7 M7 7h.01',
+  spark:'m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5Z',
+  brush:'m14 3 7 7-9 9-7-7 9-9Z M5 12l-3 9 9-3 M12 5l7 7',
+  blend:'M12 3 2 20h20L12 3Z M12 13v.01 M12 3v5 M2 20l5-3 M22 20l-5-3',
+  select:'M9 3H3v6 M15 3h6v6 M3 15v6h6 M21 15v6h-6 M8 8h8v8H8Z',
+  hand:'M8 12V5a2 2 0 0 1 4 0v7-9a2 2 0 0 1 4 0v9-7a2 2 0 0 1 4 0v9c0 5-3 7-7 7h-2c-3 0-4-2-6-5l-3-4a2 2 0 0 1 3-2l3 2Z',
+  sword:'m5 19 14-14V2h3v3L8 20 M3 15l6 6 M2 22l4-4',
+  layers:'m12 2 10 6-10 6L2 8l10-6Z M2 12l10 6 10-6 M2 16l10 6 10-6',
+  flat:'M3 4h7l2 3 2-3h7v16h-7l-2-3-2 3H3V4Z M12 7v10',
+  book:'M12 5C8 2 4 3 2 4v16c3-2 7-2 10 0 3-2 7-2 10 0V4c-3-2-7-2-10 1Z M12 5v15',
+  template:'M3 3h18v18H3Z M7 7h4v4H7Z M15 7v4 M7 15h4 M15 15h2v2h-2Z',
+  chat:'M21 3H3v14h5l4 4v-4h9V3Z M7 8h10 M7 12h6',
+  check:'m5 12 4 4L19 6',
+  play:'m8 4 12 8-12 8V4Z',
+  plus:'M12 4v16 M4 12h16',
+  close:'m5 5 14 14 M19 5 5 19',
+  back:'m12 4-8 8 8 8 M4 12h17',
+  upload:'M12 16V3 M7 8l5-5 5 5 M3 15v6h18v-6',
+  save:'M3 3h15l3 3v15H3V3Z M7 3v6h10V3 M7 21v-8h10v8',
+  history:'M3 10a9 9 0 1 1 1 7 M3 3v7h7 M12 7v5l3 2',
+  folder:'M2 5h8l2 3h10v13H2V5Z',
+  arrow:'M4 12h16 M14 6l6 6-6 6',
+  more:'M5 12h.01 M12 12h.01 M19 12h.01',
+  info:'M12 11v6 M12 7v.01 M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z',
+  expand:'M8 3H3v5 M16 3h5v5 M3 16v5h5 M21 16v5h-5',
+  undo:'M3 10h11a6 6 0 0 1 0 12 M8 5l-5 5 5 5',
+  settings:'M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6',
+  search:'M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14Z M15 15l6 6',
+};
+export const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+export function icon(name, cls = '') {return `<svg class="ns-icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name] || paths.spark}"/></svg>`;}
+export const nodeIcon = type => ({garment_input:'garment',image_reference:'image',scene_context:'book',character_research:'search',production_context:'settings',quick_create:'spark',precision_edit:'brush',blend_create:'blend',region_generate:'select',gesture_simulation:'hand',battle_simulation:'sword',image_generate:'image',intent_assist:'chat',design_advice:'chat',design_review:'check',agent_execute:'play',garment_split:'layers',flatten_map:'flat',production_guide:'book',stencil_export:'template'}[type] || 'spark');
+export function safeImage(value) {return typeof value === 'string' && /^\/(?:data|resources)\/[a-zA-Z0-9_\-./%]+(?:\?[a-zA-Z0-9=&_.-]*)?$/.test(value) ? value : '';}

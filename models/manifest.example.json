@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "models": [
+    {"id": "my-sd15-base", "kind": "base", "architecture": "sd15", "file": "checkpoints/my-model.safetensors", "checkpointName": "my-model.safetensors", "title": "我选择的实验底模"}
+  ]
+}

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#071c22">
+  <title>遗迹重构 · Cosplay战损方案工作台</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/co-design.css">
+  <link rel="stylesheet" href="/v2-ui.css">
+  <link rel="stylesheet" href="/desktop-settings.css">
+  <link rel="stylesheet" href="/blood-workspace.css">
+  <link rel="stylesheet" href="/garment-mapping.css">
+  <link rel="stylesheet" href="/surface-workspace.css">
+</head>
+<body class="landing-active">
+  <a class="skip-link" href="#controlPanel">跳到方案设置</a>
+
+  <section class="landing-screen" id="landingScreen" aria-labelledby="landingTitle">
+    <div class="landing-art" aria-hidden="true"><img src="/assets/deepsea-fallback.svg" alt="" fetchpriority="high"></div>
+    <div class="landing-shade" aria-hidden="true"></div>
+    <div class="atmosphere-light" aria-hidden="true"></div>
+    <div class="atmosphere-grain" aria-hidden="true"></div>
+    <div class="sea-particles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <header class="landing-header">
+      <a class="landing-wordmark" href="#" aria-label="遗迹重构首页"><span class="wordmark-line"></span><span>遗迹重构</span><small>COSPLAY DESIGN STUDIO</small></a>
+      <span class="landing-local"><i></i>本机工作台</span>
+    </header>
+    <div class="landing-copy">
+      <p class="landing-kicker"><span></span>从故事出发，重新看见你的服装</p>
+      <h1 id="landingTitle" tabindex="-1">遗迹重构</h1>
+      <p class="landing-english">RELIC RECONSTRUCTION</p>
+      <p class="landing-description">沿着角色的故事，和 AI 一起创作。<br>把想象中的战斗痕迹，留在你的服装上。</p>
+      <button class="enter-studio" id="enterStudio"><span>进入工作台</span><svg aria-hidden="true"><use href="#icon-right"/></svg></button>
+      <p class="landing-note">保留角色特征，让每一道痕迹都有来处。</p>
+    </div>
+    <footer class="landing-footer">
+      <ol class="landing-flow" aria-label="工作台流程"><li><span>01</span>准备素材</li><li><span>02</span>一起设计</li><li><span>03</span>制作辅助</li></ol>
+      <span class="landing-caption">故事 · 服装 · 痕迹</span>
+    </footer>
+  </section>
+  <div class="studio-shell" id="studioShell" hidden>
+  <header class="app-header">
+    <a class="brand" id="homeButton" href="#" aria-label="返回遗迹重构首页">
+      <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true"><path d="M8 9h11v8H8zM23 9h9v11h-9zM8 21h9v11H8zM21 24h11v8H21z"/><path class="brand-cut" d="m5 35 30-30"/></svg>
+      <span><strong>遗迹重构</strong><span class="brand-caption">Cosplay战损方案工作台</span></span>
+    </a>
+    <div class="header-meta"><span class="version-tag">协作工作台 <b>02</b></span><span id="connectionStatus" class="connection"><span class="status-dot"></span>连接中</span></div>
+    <div class="header-actions">
+      <button class="button service-button" id="aiSettingsButton"><svg aria-hidden="true"><use href="#icon-settings"/></svg><span>图像服务</span></button>
+      <button class="button text-button" id="importButton"><svg aria-hidden="true"><use href="#icon-folder"/></svg><span>导入方案</span></button>
+      <button class="button outline-button" id="saveButton"><svg aria-hidden="true"><use href="#icon-save"/></svg><span>保存方案</span></button>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <div class="project-heading"><div><span class="eyebrow">RELIC RECONSTRUCTION / STUDIO</span><h1 id="studioTitle" tabindex="-1">你的战损方案，从这里开始。</h1></div><div class="project-name"><label for="projectTitle">方案名称</label><input id="projectTitle" value="我的战损方案" maxlength="80"><span id="saveStatus">本机自动保留草稿</span></div></div>
+    <nav class="workflow" aria-label="制作流程"><ol id="stepper"></ol></nav>
+
+    <div class="workbench">
+      <aside class="control-panel" id="controlPanel" aria-label="方案设置">
+        <div class="panel-top"><span id="stepEyebrow" class="eyebrow">STEP 01</span><h2 id="stepTitle">选择服装</h2><p id="stepDescription">先建立服装底图，再沿着角色的故事规划痕迹。</p></div>
+        <div id="stepContent" class="step-content"></div>
+        <div class="panel-bottom"><button id="previousStep" class="button text-button"><svg aria-hidden="true"><use href="#icon-left"/></svg>上一步</button><button id="nextStep" class="button primary-button">下一步<svg aria-hidden="true"><use href="#icon-right"/></svg></button></div>
+      </aside>
+
+      <section class="canvas-panel" aria-labelledby="canvasTitle">
+        <div class="canvas-heading"><div><span class="eyebrow">服装工作区</span><h2 id="canvasTitle">长款外套 · 平铺示例</h2></div><span class="tag" id="canvasViewTag">正面</span></div>
+        <div class="canvas-toolbar" role="toolbar" aria-label="区域工具">
+          <div class="tool-group"><button id="selectTool" class="tool-button active" aria-pressed="true" title="选择和移动区域"><svg aria-hidden="true"><use href="#icon-cursor"/></svg><span>选择</span></button><button id="drawTool" class="tool-button" aria-pressed="false" title="拖动画出战损区域"><svg aria-hidden="true"><use href="#icon-rect"/></svg><span>战损区域</span></button><button id="protectTool" class="tool-button" aria-pressed="false" title="拖动画出保护区域"><svg aria-hidden="true"><use href="#icon-lock"/></svg><span>保护区域</span></button></div>
+          <div class="tool-group"><button id="undoButton" class="tool-button icon-only" aria-label="撤销上一次区域修改" title="撤销"><svg aria-hidden="true"><use href="#icon-undo"/></svg></button><button id="compareButton" class="tool-button" aria-pressed="false"><svg aria-hidden="true"><use href="#icon-compare"/></svg><span>原图</span></button><button id="regionsButton" class="tool-button icon-only" aria-label="隐藏或显示区域" aria-pressed="true"><svg aria-hidden="true"><use href="#icon-eye"/></svg></button></div>
+        </div>
+        <div class="canvas-stage" id="canvasStage">
+          <div class="canvas-corner canvas-corner-tl"></div><div class="canvas-corner canvas-corner-br"></div>
+          <div class="garment-canvas" id="garmentCanvas">
+            <img id="garmentImage" src="/resources/garments/demo_coat_front.png" alt="长款外套平铺示意底图，非角色官方服装或商家商品" draggable="false">
+            <svg id="regionOverlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" tabindex="0" role="application" aria-label="服装区域编辑画布。可在左侧用数值添加与修改区域；选择区域后方向键移动，Delete删除。"></svg>
+          </div>
+          <div class="empty-canvas" id="emptyCanvas" hidden><svg aria-hidden="true"><use href="#icon-shirt"/></svg><h3>建立你的服装底图</h3><p>上传平铺服装照，或选择示例体验规划。</p><button id="emptyUploadButton" class="button outline-button">上传服装照片</button></div>
+          <span class="canvas-ruler">区域位置以底图宽高百分比记录</span>
+        </div>
+        <div class="canvas-footer"><span id="canvasCaption">流程示例 · 绘制示意图，非商家商品</span><span id="regionCount">0 个战损区域 · 0 个保护区域</span></div>
+        <div class="canvas-legend"><span><i class="legend-line slash"></i>刀痕</span><span><i class="legend-line blood"></i>血迹</span><span><i class="legend-line burn"></i>焦痕</span><span><i class="legend-line protected"></i>保护区域</span><span class="legend-note" id="canvasModeNotice">区域标注预览</span></div>
+        <div class="selection-editor" id="selectionEditor" hidden></div>
+      </section>
+      <aside id="coAssistantPane" aria-label="AI 创作助手" hidden></aside>
+    </div>
+    <footer class="app-footer"><span>以剧情还原为主，允许补充此情境下的战损细节。</span><span>服装结构与角色辨识细节优先保留。</span></footer>
+  </main>
+  </div>
+
+  <input id="imageUpload" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+  <input id="projectImport" type="file" accept="application/json,.json" hidden>
+  <div id="notification" class="notification" role="status" aria-live="polite"></div>
+  <dialog id="exportDialog"><div class="dialog-heading"><h2>导出制作方案</h2><button class="tool-button icon-only" id="closeExportDialog" aria-label="关闭"><svg aria-hidden="true"><use href="#icon-close"/></svg></button></div><p>保存剧情依据、区域位置和制作清单，供试样及实际制作时对照。</p><div class="export-options"><button class="button outline-button" id="exportJson"><svg aria-hidden="true"><use href="#icon-file"/></svg>方案文件（JSON）</button><button class="button outline-button" id="exportHtml"><svg aria-hidden="true"><use href="#icon-file"/></svg>制作说明（可打印）</button><button class="button outline-button" id="exportPng"><svg aria-hidden="true"><use href="#icon-image"/></svg>区域标注预览（PNG）</button><button class="button outline-button" id="exportResult" hidden><svg aria-hidden="true"><use href="#icon-image"/></svg>本次实际生成结果（PNG）</button></div><p class="muted small">标注预览保留区域编号，不代表模型生成效果。</p></dialog>
+
+  <svg class="svg-definitions" aria-hidden="true"><defs>
+    <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"/><circle cx="8" cy="7" r="2"/><circle cx="16" cy="17" r="2"/></symbol>
+    <symbol id="icon-right" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7M4 12h12"/></symbol>
+    <symbol id="icon-left" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7M20 12H8"/></symbol>
+    <symbol id="icon-folder" viewBox="0 0 24 24"><path d="M3 7V5h7l2 3h9v12H3V7Z"/></symbol>
+    <symbol id="icon-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V3h14l4 4v12a2 2 0 0 1-2 2ZM7 3v6h10V3M7 21v-8h10v8"/></symbol>
+    <symbol id="icon-cursor" viewBox="0 0 24 24"><path d="m5 3 15 9-7 1-3 7-5-17Z"/></symbol>
+    <symbol id="icon-rect" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="1"/><path d="M3 3h4M3 3v4M21 3h-4M21 3v4M3 21h4M3 21v-4M21 21h-4M21 21v-4"/></symbol>
+    <symbol id="icon-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0v4M12 14v3"/></symbol>
+    <symbol id="icon-undo" viewBox="0 0 24 24"><path d="M4 10h10a6 6 0 0 1 0 12M4 10l5-5M4 10l5 5"/></symbol>
+    <symbol id="icon-compare" viewBox="0 0 24 24"><path d="M12 3v18M9 5H3v14h6M15 5h6v14h-6"/></symbol>
+    <symbol id="icon-eye" viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="icon-shirt" viewBox="0 0 24 24"><path d="m8 3-6 4 3 5 3-2v11h8V10l3 2 3-5-6-4c0 4-8 4-8 0Z"/></symbol>
+    <symbol id="icon-upload" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M3 15v6h18v-6"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="icon-close" viewBox="0 0 24 24"><path d="m5 5 14 14M19 5 5 19"/></symbol>
+    <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></symbol>
+    <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></symbol>
+    <symbol id="icon-file" viewBox="0 0 24 24"><path d="M14 2H5v20h14V7l-5-5ZM14 2v5h5M8 12h8M8 16h8"/></symbol>
+    <symbol id="icon-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m3 18 6-7 4 4 3-5 5 8"/></symbol>
+    <symbol id="icon-link" viewBox="0 0 24 24"><path d="M14 3h7v7M21 3l-9 9M10 3H3v18h18v-7"/></symbol>
+    <symbol id="icon-slash" viewBox="0 0 24 24"><path d="m4 20 7-9 2 2 7-9M7 20l13-13"/></symbol>
+    <symbol id="icon-pan" viewBox="0 0 24 24"><path d="M8 12V5a2 2 0 0 1 4 0v7-9a2 2 0 0 1 4 0v9-7a2 2 0 0 1 4 0v9c0 5-3 7-7 7h-2c-3 0-4-2-6-5l-3-4a2 2 0 0 1 3-2l3 2Z"/></symbol>
+    <symbol id="icon-brush" viewBox="0 0 24 24"><path d="m14 3 7 7-9 9-7-7 9-9ZM5 12l-3 9 9-3M12 5l7 7"/></symbol>
+    <symbol id="icon-wear" viewBox="0 0 24 24"><path d="m4 6 14 12M7 3l13 12M3 11l10 9M12 3l9 8M4 18l3 3"/></symbol>
+    <symbol id="icon-erase" viewBox="0 0 24 24"><path d="m15 3 6 6-12 12H5l-4-4L15 3ZM6 12l6 6M9 21h13"/></symbol>
+    <symbol id="icon-drop" viewBox="0 0 24 24"><path d="M12 3C10 7 5 11 5 15a7 7 0 0 0 14 0c0-4-5-8-7-12Z"/></symbol>
+    <symbol id="icon-burn" viewBox="0 0 24 24"><path d="M12 2c3 7-1 7 3 10 2-1 2-3 2-3s4 4 3 8a8 8 0 0 1-16-1c0-4 4-7 4-7s-1 5 2 5c3-1 1-4 2-12Z"/></symbol>
+  </defs></svg>
+  <script src="/app.js" defer></script>
+  <script src="/cloud-settings.js" defer></script>
+  <script src="/quick-start.js" defer></script>
+  <script src="/brush-engine.js" defer></script>
+  <script src="/blood-engine.js" defer></script>
+  <script src="/blood-surface.js" defer></script>
+  <script src="/cloth-surface.js" defer></script>
+  <script src="/surface-brush.js" defer></script>
+  <script src="/brush-workbench.js" defer></script>
+  <script src="/co-design.js" defer></script>
+  <script src="/v2-ui.js" defer></script>
+  <script src="/blood-workspace.js" defer></script>
+  <script src="/desktop-settings.js" defer></script>
+  <script src="/desktop-workspace.js" defer></script>
+  <script src="/garment-mapping.js" defer></script>
+  <script src="/surface-workspace.js" defer></script>
+  <script src="/entrance.js" defer></script>
+  <script src="/legacy-node-host.js" defer></script>
+</body>
+</html>

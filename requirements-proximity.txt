@@ -1,0 +1,5 @@
+# Optional existing local-runtime feature; unnecessary for normal painting or M-key magnifier.
+# If cv2 already imports successfully, do not install another OpenCV distribution beside it.
+# Install into a chosen interaction runtime only when needed; never auto-installed by the app.
+opencv-python-headless>=4.10,<5
+Pillow>=10

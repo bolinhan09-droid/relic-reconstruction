@@ -1,0 +1,56 @@
+照片表面贴合引擎 v1（2026-10-16）
+
+范围
+将已有透明痕迹层按照原照片的局部光影和可选相对深度做有界图像位移；
+改变血迹/磨损的边缘与位置几何，而不仅将颜色变深。原照片不变。
+不是服装 3D 重建、真实褶皱高度、流体模拟、材质吸收或隐蔽区域补全。
+
+真实参考（本模块独立编写，没有复制这些项目的代码）
+1. PixiJS 官方 DisplacementFilter：基于图像映射对采样坐标做位移。
+   https://github.com/pixijs/pixijs/blob/dev/src/filters/defaults/displacement/DisplacementFilter.ts
+2. Depth Anything V2 官方项目：单目相对深度，可作为额外低频形状线索。
+   https://github.com/DepthAnything/Depth-Anything-V2
+   深度模型由调用者执行并提供。本模块缺少深度时明确标记 relativeDepthProvided=false。
+3. Barron & Malik, Shape, Illumination, and Reflectance from Shading：
+   单张照片的形状、反射率和光照存在歧义，不能从明暗直接得出准确高度。
+   https://arxiv.org/abs/2010.03592
+
+算法
+1. 从不可变原照片采样到最长边 256 的缓存场（可选 32~512）。
+2. 将 sRGB 转线性 RGB 后计算相对亮度；使用 log(0.04+Y)。
+3. 小半径平滑减大半径局部均值，得到高频光照线索。
+4. 对颜色比例突变处降低位移权重，减少将彩色印花边界当成褶皱。
+5. 可选相对深度平滑后提供低频位移。任何深度都不转换为厘米高度。
+6. 两个 UV 位移分量均限制在图像宽高的 1.5% 以内，再乘强度 0~1。
+7. 对透明痕迹做逆向位移和预乘透明度的双线性采样；透明背景保持无色。
+8. 可选前景遮罩裁剪痕迹；可选轻微光照乘数，几何强度与着色强度独立。
+9. 前端与保存/导出使用同一份 field_payload，避免两端重新分析而产生差异。
+
+接口
+Python:
+  field = build_surface_field(source_RGB, foreground=mask_L, relative_depth=depth_L)
+  data = field_payload(field)
+  paint = apply_surface(original_paint_RGBA, field, strength=.65, shade=.45)
+JavaScript:
+  field = ClothSurface.fromPayload(server_json)
+  ClothSurface.draw(paint_canvas, field, {strength:.65, shade:.45})
+  或 ClothSurface.apply(ImageData, field, options)
+
+集成规则
+- 每次先从保存的原笔刷形状绘制，再应用一次位移。不能在上次位移后的层上继续位移。
+- 原照片不加位移。前景去背景需使用完整原分辨率遮罩，不能拿 256 场当抠图品质。
+- 位移后重新应用保护区域，防止痕迹挪入本来禁止修改的区域。
+- maskOnly=true 只做位移和前景剪裁，不做色调调节。
+- 既有 v2 血迹已经采样原图做过一次色调调节，建议不要再使用过强阴影。
+- 位移没有眼睛/头部/服装部件语义；皮肤/徽标保护仍由人像和编辑遮罩负责。
+
+限制
+黑白印花、镜面反光与投影也可能形成类似明暗，单张照片无法全部区分。
+大皱褶遮住的布料并没有被重建；近似效果不证明这些位置真的对应同一块布。
+默认是可关闭的预览增强。不是制造模板的比例校准依据。
+
+验证
+tools/check_cloth_surface.py：常量平面、周期折痕、alpha 边界、前景、可选深度、
+序列化重放、非有限数拒绝、JavaScript/Python 四组像素对比。
+2026-10-16 当前四组 fixture 输出逐字节一致；场误差小于 3e-15。
+1024/1400 的实测耗时依工作区 CPU 负载而变，不能视为全机实时性能保证。

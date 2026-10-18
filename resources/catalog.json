@@ -1,0 +1,44 @@
+{
+  "characters": [
+    {
+      "id": "ulpian",
+      "name": "乌尔比安",
+      "game": "明日方舟",
+      "note": "剧情来源与战损推演分开记录"
+    }
+  ],
+  "merchants": [
+    {
+      "id": "demo",
+      "name": "流程示例（非商家商品）"
+    },
+    {
+      "id": "personal",
+      "name": "我的实物服装"
+    }
+  ],
+  "garments": [
+    {
+      "id": "demo-coat-front",
+      "name": "长款外套 · 平铺示例",
+      "characterId": "ulpian",
+      "merchantId": "demo",
+      "view": "front",
+      "imageUrl": "/resources/garments/demo_coat_front.png",
+      "material": "未知，需用户确认",
+      "isDemo": true,
+      "source": "本项目绘制的流程示意图",
+      "note": "用于体验流程，不是乌尔比安官方服装或商家商品；请上传实物平铺图建立正式方案。",
+      "protectedRects": [
+        {
+          "x": 0.552,
+          "y": 0.306,
+          "w": 0.063,
+          "h": 0.058
+        }
+      ],
+      "width": 1024,
+      "height": 1024
+    }
+  ]
+}

@@ -1,0 +1,302 @@
+{
+  "schema_version": "1.0",
+  "checked_on": "2026-10-08",
+  "character": {
+    "id": "ulpianus",
+    "name": "乌尔比安",
+    "game": "明日方舟",
+    "background_summary": "阿戈尔人，深海猎人计划负责人、作战指挥官之一；干员档案记载其为第一位深海猎人，并使用四爪巨锚。",
+    "source_urls": [
+      {
+        "title": "乌尔比安／干员档案（PRTS 游戏文本转录）",
+        "url": "https://prts.wiki/w/乌尔比安#干员档案",
+        "type": "game_text_transcript"
+      }
+    ],
+    "verified_claims": [
+      "客观履历列明其深海猎人计划负责人和作战指挥官身份。",
+      "档案资料一记述四爪巨锚及精准运用暴力的战斗习惯。"
+    ],
+    "unknowns": [
+      "当前示例不核定某一张参考服装的版本；仍须由用户选择服装参考图。",
+      "不能以旧身体伤痕直接推定任一战斗场景中的新衣服伤痕。"
+    ]
+  },
+  "source_policy": {
+    "description": "PRTS 是玩家维基；本资料使用其中转录的游戏干员档案、剧情原文，不将其标成游戏官网。活动时间与干员登场由明日方舟官网公告交叉核查。",
+    "fact_boundary": "资料来源支持角色背景和事件情境。衣服破口、血迹、焦烧的位置、面积、程度均为设计推演，当前未查得明确原作依据。",
+    "default_mode": "以原作情境为依据进行局部战损补充；先选剧情，后选程度与位置。无需用户自行填写攻击方式。",
+    "custom_mode": "保留‘补充战损设定’分支，只调整痕迹、位置、面积与程度；保留角色身份、脸部、发型、服装结构、关键纹样。",
+    "forbidden_inferences": [
+      "不把玩家可编入关卡的干员视为剧情确实参战。",
+      "不把乌尔比安给敌人造成的伤害当成他自身受伤。",
+      "不把游戏元素‘灼燃损伤’直接等同于乌尔比安服装被烧焦。",
+      "不把海嗣化、调查、手术背景当成可以重构人物外貌的许可。"
+    ],
+    "live_search_note": "原型提供可点击的官网、PRTS 精确资料入口和手动检索入口；这些静态资料卡不是运行时联网搜索结果。接入联网检索以后需继续保留来源、证据状态与人工确认。",
+    "official_crosscheck": {
+      "title": "《生路》限时活动官方公告",
+      "url": "https://ak.hypergryph.com/news/1525",
+      "type": "official_announcement",
+      "publish_date": "2024-05-29",
+      "verified_claim": "公告确认《生路》于 2024 年 6 月 5 日开启，乌尔比安作为新增干员登场；公告不能证明任何具体服装伤痕。"
+    }
+  },
+  "cards": [
+    {
+      "id": "ulpianus_nest_hunt",
+      "title": "海嗣巢穴作战后",
+      "event": "干员档案资料三所述的深海猎人任务",
+      "scenario_kind": "confirmed_combat_context",
+      "evidence_label": "档案有据 · 具体服装伤痕未载",
+      "canonical_summary": "斯卡蒂回忆，乌尔比安在进入海嗣巢穴前为三队作曲，战斗结束后要求队员复唱，以检查其自我认知。这是多次任务的概述，未指明单场战役。",
+      "source_urls": [
+        {
+          "title": "乌尔比安／档案资料三（PRTS 游戏文本转录）",
+          "url": "https://prts.wiki/w/乌尔比安#干员档案",
+          "type": "game_text_transcript",
+          "section": "档案资料三"
+        }
+      ],
+      "verified_claims": [
+        "存在进入海嗣巢穴并在战后核验队员的任务情境。",
+        "记述来自斯卡蒂对三队与乌尔比安的回忆。"
+      ],
+      "unknowns": [
+        "没有具体任务日期、巢穴坐标或此次敌方攻击命中的记述。",
+        "没有乌尔比安该次外套破口、血液来源或火焰烧灼的明确记述。"
+      ],
+      "damage_proposals": [
+        {
+          "effect_type": "cut",
+          "label": "轻微破口",
+          "canon_status": "design_inference",
+          "enabled_by_default": true,
+          "default_strength": 0.3,
+          "regions": [
+            "外套袖缘",
+            "下摆"
+          ],
+          "rationale": "作为战后局部磨损方案；仅保留少量浅破口，不能称为原作既有刀伤。"
+        },
+        {
+          "effect_type": "blood",
+          "label": "少量布面血迹",
+          "canon_status": "custom_damage_addition",
+          "enabled_by_default": false,
+          "default_strength": 0.2,
+          "regions": [
+            "袖口外侧"
+          ],
+          "rationale": "血迹存在与来源均未得到本场景证实；用户主动补充时才启用。"
+        },
+        {
+          "effect_type": "char",
+          "label": "烧焦",
+          "canon_status": "unsupported_for_canon_default",
+          "enabled_by_default": false,
+          "default_strength": 0.2,
+          "regions": [
+            "下摆局部"
+          ],
+          "rationale": "该档案段落没有火焰或灼烧依据；剧情还原默认不启用，需切换为局部战损补充。"
+        }
+      ],
+      "default_effects": [
+        "cut"
+      ],
+      "spoiler_note": "涉及深海猎人以旋律检查身份的档案内容。",
+      "protect_features": [
+        "面部与发型",
+        "巨锚造型",
+        "外套原有轮廓",
+        "关键纹样与配饰"
+      ],
+      "ui_hint": "选择这个战斗背景后，只需确定战损轻重和局部位置。"
+    },
+    {
+      "id": "ulpianus_solo_investigation",
+      "title": "独自进入海沟巢穴",
+      "event": "SideStory《生路》BP-ST-1 浪潮守望者",
+      "scenario_kind": "confirmed_investigation_combat_unverified",
+      "evidence_label": "剧情有据 · 交战未核实",
+      "canonical_summary": "乌尔比安让罗辛南特返回，独自游入海沟中的海嗣巢穴，向海嗣追问迁徙及航道关联。该段落呈现调查与对话，没有确认他在这里交战受伤。",
+      "source_urls": [
+        {
+          "title": "BP-ST-1 浪潮守望者／剧情原文（PRTS 转录）",
+          "url": "https://prts.wiki/w/BP-ST-1_浪潮守望者/NBT",
+          "type": "game_text_transcript",
+          "section": "末段：海沟巢穴"
+        },
+        {
+          "title": "《生路》活动官方公告",
+          "url": "https://ak.hypergryph.com/news/1525",
+          "type": "official_announcement",
+          "publish_date": "2024-05-29"
+        }
+      ],
+      "verified_claims": [
+        "乌尔比安独自进入海沟巢穴，罗辛南特留在外面。",
+        "在巢穴中向海嗣调查迁徙、航道相关问题。"
+      ],
+      "unknowns": [
+        "该段落没有显示乌尔比安遭遇攻击或受伤。",
+        "不能将‘进入海嗣巢穴’自动扩展为‘战斗后满身血迹’。",
+        "没有外套烧损或具体破口的原作依据。"
+      ],
+      "damage_proposals": [
+        {
+          "effect_type": "cut",
+          "label": "轻微袖缘磨损",
+          "canon_status": "custom_damage_addition",
+          "enabled_by_default": false,
+          "default_strength": 0.2,
+          "regions": [
+            "袖缘"
+          ],
+          "rationale": "若用户选择补充此前任务留下的局部破口，可添加轻微痕迹；该巢穴调查段落本身不证明破口。"
+        },
+        {
+          "effect_type": "blood",
+          "label": "布面旧血迹",
+          "canon_status": "custom_damage_addition",
+          "enabled_by_default": false,
+          "default_strength": 0.15,
+          "regions": [
+            "外套局部"
+          ],
+          "rationale": "仅可作为用户补充的先前战损；不得表述为本场景已确认受伤。"
+        },
+        {
+          "effect_type": "char",
+          "label": "烧焦",
+          "canon_status": "unsupported_for_canon_default",
+          "enabled_by_default": false,
+          "default_strength": 0.15,
+          "regions": [
+            "下摆局部"
+          ],
+          "rationale": "没有火焰依据；剧情还原默认不启用。"
+        }
+      ],
+      "default_effects": [],
+      "spoiler_note": "包含《生路》开场海嗣对话情境。",
+      "protect_features": [
+        "角色身份与外貌",
+        "服装完整结构",
+        "关键纹样与配饰"
+      ],
+      "ui_hint": "这是调查情境。还原模式先保留服装；需要战损时使用局部补充选项。"
+    },
+    {
+      "id": "ulpianus_beacon_tower",
+      "title": "信标塔交手与沉海",
+      "event": "SideStory《生路》BP-7 从历史中来（行动后）",
+      "scenario_kind": "confirmed_combat_context",
+      "evidence_label": "剧情有据 · 命中与衣服损伤未载",
+      "canonical_summary": "乌尔比安切割信标塔使其脱离城市；歌蕾蒂娅试图阻止他，双方短暂交手，长槊与链锚相交。随后建筑下沉，海水灌入中控室，他留在塔中。",
+      "source_urls": [
+        {
+          "title": "BP-7 从历史中来／行动后原文（PRTS 转录）",
+          "url": "https://prts.wiki/w/BP-7_从历史中来/END",
+          "type": "game_text_transcript",
+          "section": "信标塔中控室"
+        },
+        {
+          "title": "情报处理室／生路（PRTS 游戏梗概转录）",
+          "url": "https://prts.wiki/w/情报处理室#生路",
+          "type": "game_summary_transcript"
+        }
+      ],
+      "verified_claims": [
+        "乌尔比安参与分离信标塔与城市的行动。",
+        "乌尔比安与歌蕾蒂娅短暂交手；原文明确写到长槊与链锚。",
+        "建筑下沉，海水灌入中控室；乌尔比安留下。"
+      ],
+      "unknowns": [
+        "交手原文没有确认长槊命中乌尔比安。",
+        "未明确描写乌尔比安的服装破损、出血或烧伤。",
+        "信标塔下沉与结构震动不能直接证明焦烧。"
+      ],
+      "damage_proposals": [
+        {
+          "effect_type": "cut",
+          "label": "外套局部浅破口",
+          "canon_status": "design_inference",
+          "enabled_by_default": true,
+          "default_strength": 0.35,
+          "regions": [
+            "外套袖缘",
+            "下摆"
+          ],
+          "rationale": "以短暂交手和结构震动为情境，仅推演少量浅破口；命中部位与伤痕形态由用户确认，不称为原作事实。"
+        },
+        {
+          "effect_type": "blood",
+          "label": "少量袖缘血迹",
+          "canon_status": "custom_damage_addition",
+          "enabled_by_default": false,
+          "default_strength": 0.2,
+          "regions": [
+            "袖缘破口附近"
+          ],
+          "rationale": "原文未确认出血；用户选择补充时才生成，并与破口位置保持一致。"
+        },
+        {
+          "effect_type": "char",
+          "label": "烧焦",
+          "canon_status": "unsupported_for_canon_default",
+          "enabled_by_default": false,
+          "default_strength": 0.2,
+          "regions": [
+            "下摆局部"
+          ],
+          "rationale": "此场景未查得火焰依据；还原模式默认关闭。需用户局部补充说明后才可作为设计推演调用。"
+        }
+      ],
+      "default_effects": [
+        "cut"
+      ],
+      "spoiler_note": "包含《生路》后段重要剧透；在卡片展开前提示。",
+      "protect_features": [
+        "面部与发型",
+        "链锚造型",
+        "外套原有轮廓",
+        "关键纹样与配饰"
+      ],
+      "ui_hint": "原文确认了交手与沉海，痕迹仍属于用户确认后的局部战损推演。"
+    }
+  ],
+  "search_links": [
+    {
+      "title": "角色档案与参考立绘",
+      "url": "https://prts.wiki/w/乌尔比安",
+      "type": "game_text_transcript",
+      "use": "查阅角色背景、语音与服装参考入口"
+    },
+    {
+      "title": "《生路》剧情索引",
+      "url": "https://prts.wiki/w/情报处理室#生路",
+      "type": "game_summary_transcript",
+      "use": "根据梗概选择章节，再进入对应剧情原文"
+    },
+    {
+      "title": "海沟调查原文",
+      "url": "https://prts.wiki/w/BP-ST-1_浪潮守望者/NBT",
+      "type": "game_text_transcript",
+      "use": "核查独自进入巢穴的调查情境"
+    },
+    {
+      "title": "信标塔交手原文",
+      "url": "https://prts.wiki/w/BP-7_从历史中来/END",
+      "type": "game_text_transcript",
+      "use": "核查交手及信标塔下沉"
+    },
+    {
+      "title": "《生路》官方活动公告",
+      "url": "https://ak.hypergryph.com/news/1525",
+      "type": "official_announcement",
+      "use": "交叉核查活动与干员登场"
+    }
+  ]
+}
