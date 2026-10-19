@@ -1,0 +1,15 @@
+.ns-battle3d{display:grid;grid-template-columns:minmax(0,1fr) minmax(210px,270px);gap:18px;align-items:start}
+    .ns-battle3d-stage{position:relative;min-height:520px;height:clamp(430px,65vh,720px);border:1px solid var(--ns-line);background:var(--ns-canvas);border-radius:6px;overflow:hidden}
+    .ns-battle3d-stage canvas{display:block;width:100%;height:100%;touch-action:none;outline-offset:-4px}
+    .ns-battle3d-stage canvas:focus-visible{outline:3px solid var(--ns-accent,#347b73)}
+    .ns-battle3d-hud{position:absolute;left:14px;top:12px;right:14px;pointer-events:none;display:flex;justify-content:space-between;gap:10px;font-size:12px;color:#183f43}
+    .ns-battle3d-crosshair{position:absolute;left:50%;top:50%;width:16px;height:16px;transform:translate(-50%,-50%);pointer-events:none;opacity:.5}
+    .ns-battle3d-crosshair:before,.ns-battle3d-crosshair:after{content:'';position:absolute;background:#426461}
+    .ns-battle3d-crosshair:before{height:1px;width:16px;top:8px}.ns-battle3d-crosshair:after{width:1px;height:16px;left:8px}
+    .ns-battle3d-panel{display:flex;flex-direction:column;gap:12px}.ns-battle3d-panel .ns-ws-field{margin:0}
+    .ns-battle3d-texture{width:100%;aspect-ratio:1;max-height:260px;object-fit:contain;border:1px solid var(--ns-line);border-radius:4px;background:#e5eae3}
+    .ns-battle3d-count{font-size:13px;line-height:1.7;min-height:44px}.ns-battle3d-views{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+    .ns-battle3d-views button,.ns-battle3d-panel button{min-height:44px}.ns-battle3d-help{font-size:13px;line-height:1.65;margin:0}
+    .ns-battle3d-records{max-height:200px;overflow:auto;margin:0;padding-left:21px;font-size:12px;line-height:1.7}
+    @media(max-width:850px){.ns-battle3d{grid-template-columns:1fr}.ns-battle3d-stage{min-height:420px;height:56vh}.ns-battle3d-panel{display:grid;grid-template-columns:1fr 1fr}.ns-battle3d-panel .ns-battle3d-uv,.ns-battle3d-count{grid-column:1/-1}.ns-battle3d-texture{max-height:230px}}
+    @media(prefers-reduced-motion:reduce){.ns-battle3d *{scroll-behavior:auto}}

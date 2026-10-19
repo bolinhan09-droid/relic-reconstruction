@@ -1,0 +1,230 @@
+/* v0.9 visual direction: a printmaker's worktable, weathered paint and clear tools.
+ * Layout of the graph, nodes and branch connectors belongs to v09-graph.css.
+ * Actual generated artwork lives locally under assets/v09; no external font/network. */
+:root {
+  --ns-paper:#f8f7f1;
+  --ns-canvas:#eeefea;
+  --ns-surface:#fffefa;
+  --ns-ink:#232c2c;
+  --ns-muted:#65716e;
+  --ns-line:#d2d7cd;
+  --ns-accent:#a63b2e;
+  --ns-accent-soft:#f0e0d7;
+  --ns-creation:#ad3c2e;
+  --ns-creation-soft:#ead8cf;
+  --ns-input:#567581;
+  --ns-input-soft:#dfe7e7;
+  --ns-ai:#506a78;
+  --ns-ai-soft:#e0e7e8;
+  --ns-setting:#d2c9a9;
+  --ns-setting-soft:#eee9d9;
+  --ns-structure:#c5cdc5;
+  --ns-structure-soft:#e6eae2;
+  --ns-production:#82724c;
+  --ns-production-soft:#e8e1cf;
+  --ns-focus:#406c86;
+  --ns-art-paper:url('../assets/v09/constructivist-paper.png');
+  --ns-art-paint:url('../assets/v09/paint-abrasion.png');
+}
+
+/* A quiet continuous chrome; the tags carry the stronger color. */
+.ns-topbar {background:#f8f7f1f5;border-bottom:1px solid #b9c1b49c;box-shadow:0 2px 10px #26382d04;}
+.ns-brand>svg {color:var(--ns-accent);}
+.ns-brand>span {font-weight:680;letter-spacing:.075em;}
+.ns-brand small {letter-spacing:.13em;color:#718079;}
+.ns-project-title {border-left-color:#c8cec4;font-size:13px;color:#4f5e58;}
+.ns-save-state {color:#728075;}
+.ns-button,.ns-icon-button {border-radius:4px;transition:background-color .16s,border-color .16s,box-shadow .16s;color:var(--ns-ink);}
+.ns-button:not(.ns-primary):hover,.ns-icon-button:hover {background:#e8eae1;border-color:#b9c4b6;}
+.ns-primary {background:var(--ns-accent);border-color:var(--ns-accent);color:#fffdf5;box-shadow:inset 0 1px 0 #fff5,0 2px 3px #743c2920;}
+.ns-primary:hover {background:#8e3025;border-color:#8e3025;color:#fffdf5;}
+.ns-primary:disabled {box-shadow:none;}
+.ns-quiet {box-shadow:none;}
+.ns-input,.ns-field input,.ns-field select,.ns-field textarea {background:#fffefa;border-color:#c8cfc3;box-shadow:inset 0 1px 2px #26382d03;}
+.ns-input:focus,.ns-field input:focus,.ns-field select:focus,.ns-field textarea:focus {border-color:var(--ns-focus);}
+.ns-dialog {background:#faf9f3;border:1px solid #bfc9ba;border-radius:8px;box-shadow:0 18px 65px #233a3029;}
+.ns-dialog-heading h2 {letter-spacing:.035em;}
+.ns-dialog::backdrop {background:#233a303b;backdrop-filter:blur(5px);}
+.ns-notice {background:#ede8da;}
+
+/* Entry: the first upload is already a large tangible tag, ready to become a node. */
+.ns-entry {
+  display:grid;
+  grid-template-columns:minmax(275px,340px) minmax(450px,750px);
+  grid-template-rows:auto auto auto auto auto;
+  column-gap:clamp(32px,5vw,90px);
+  align-content:start;
+  justify-content:center;
+  padding:clamp(40px,7vh,84px) clamp(30px,5vw,80px) 40px;
+  background-color:var(--ns-canvas);
+  background-image:linear-gradient(#f8f7f1a6,#f8f7f1a6),var(--ns-art-paper);
+  background-position:center;
+  background-size:cover;
+  background-attachment:fixed;
+}
+.ns-entry::before {display:none;}
+.ns-entry-heading {grid-column:1;grid-row:1;padding:24px 0 0;margin:0;max-width:none;align-self:end;}
+.ns-entry-heading .ns-small-label {font-size:13px;font-weight:500;letter-spacing:.08em;color:#7e695f;}
+.ns-entry-heading h1 {max-width:330px;font-size:clamp(34px,3.15vw,46px);line-height:1.37;letter-spacing:.025em;font-weight:650;margin:17px 0 16px;text-wrap:balance;}
+.ns-entry-heading p {font-size:13px;max-width:310px;line-height:1.9;color:#64726b;}
+.ns-upload-stage {grid-column:2;grid-row:1/5;display:flex;flex-direction:column;gap:19px;margin:0;max-width:none;min-width:0;align-self:start;}
+.ns-entry .ns-upload-front {
+  width:100%;height:322px;min-height:322px;border:0;border-radius:0;
+  clip-path:polygon(0 0,calc(100% - 58px) 0,100% 50%,calc(100% - 58px) 100%,0 100%,48px 50%);
+  background-color:var(--ns-creation);color:#fff8e8;
+  padding:40px 70px 40px 75px;gap:16px;isolation:isolate;
+  box-shadow:none;overflow:hidden;
+}
+.ns-entry .ns-upload-front::before {inset:0;width:auto;height:auto;border:0;background:var(--ns-art-paint) center/550px 550px;mix-blend-mode:soft-light;opacity:.42;z-index:-1;}
+.ns-entry .ns-upload-front::after {inset:8px 12px;width:auto;height:auto;border:1px solid #ffe9cf35;clip-path:polygon(0 0,calc(100% - 50px) 0,100% 50%,calc(100% - 50px) 100%,0 100%,44px 50%);z-index:-1;}
+.ns-entry .ns-upload-front:hover,.ns-entry .ns-upload-front.drag-over {background-color:#b64636;box-shadow:none;}
+.ns-entry .ns-upload-front:focus-visible {outline:none;filter:drop-shadow(0 0 6px #284d62);}
+.ns-entry .ns-front-preview {flex:0 1 48%;width:48%;height:100%;color:#fff6df;position:relative;}
+.ns-entry .ns-front-preview svg {max-height:220px;}
+.ns-entry .ns-front-preview svg>path:first-child {fill:#f9eedf0f;stroke:#fff8e2;stroke-width:1.9;}
+.ns-entry .ns-front-preview img {height:100%;width:100%;object-fit:contain;padding:0;filter:drop-shadow(0 3px 4px #3d201f22);}
+.ns-entry .ns-upload-caption {flex:1;min-width:0;text-align:left;}
+.ns-entry .ns-upload-caption strong {font-size:20px;line-height:1.65;font-weight:600;letter-spacing:.015em;}
+.ns-entry .ns-upload-caption small {font-size:11px;max-width:155px;line-height:1.8;color:#fff0dc;opacity:.85;}
+.ns-entry .ns-upload-front.has-upload {gap:19px;}
+.ns-entry .ns-upload-front.has-upload .ns-front-preview {flex-basis:58%;width:58%;}
+.ns-entry .ns-upload-front.has-upload .ns-upload-caption strong {font-size:15px;}
+.ns-entry .ns-upload-side {display:flex;flex-direction:row;justify-content:space-between;align-items:center;gap:24px;padding:0 30px 0 35px;}
+.ns-entry .ns-tag-note {padding:0;border:0;max-width:340px;}
+.ns-entry .ns-tag-note>span,.ns-entry .ns-tag-note strong {display:none;}
+.ns-entry .ns-tag-note p {max-width:340px;margin:0;font-size:12px;line-height:1.75;color:#63706b;}
+.ns-entry .ns-back-upload {flex:none;padding:0;font-size:12px;gap:10px;}
+.ns-entry .ns-back-upload>span:first-of-type {width:44px;height:48px;border:1px dashed #9ba89c;background:#eeeee4;color:#50695d;border-radius:2px;}
+.ns-entry .ns-back-upload small {font-size:10px;color:#778277;}
+.ns-entry-actions {grid-column:1;grid-row:2;justify-content:flex-start;align-self:start;flex-wrap:wrap;gap:8px;margin:24px 0 0;max-width:none;}
+.ns-entry .ns-start {min-width:180px;min-height:46px;padding:10px 17px;font-size:13px;}
+.ns-entry #sampleButton {font-size:12px;padding:10px 8px;}
+.ns-entry-foot {grid-column:1;grid-row:3;text-align:left;max-width:300px;margin:12px 0 0;color:#758075;font-size:10px;}
+.ns-entry-status {grid-column:1;grid-row:4;margin:7px 0 0;min-height:18px;font-size:12px;}
+.ns-entry-history {grid-column:1/-1;grid-row:5;width:100%;max-width:none;margin:40px 0 0;padding-top:24px;border-top:1px solid #bfc9b9;}
+.ns-history-heading {gap:16px;margin-bottom:15px;}
+.ns-history-heading h2 {font-size:18px;font-weight:600;letter-spacing:.025em;}
+.ns-history-heading>span {font-size:11px;color:#69766d;}
+.ns-history-list {gap:16px;min-height:150px;padding-bottom:10px;}
+.ns-history-card {width:230px;flex-basis:230px;border:1px solid #c5cfc0;background:#faf9f3;border-radius:4px;box-shadow:0 3px 9px #26382d04;}
+.ns-history-card:hover {border-color:var(--ns-accent);box-shadow:0 4px 12px #71392911;}
+.ns-history-picture {height:110px;background:#e4e9e1;}
+.ns-history-picture::before {height:4px;width:100%;background:var(--ns-input);clip-path:none;opacity:.55;}
+.ns-history-open {background:#faf9f2ed;color:#804136;border:1px solid #cfb8aa;border-radius:2px;}
+.ns-history-details {padding:11px 13px;}
+.ns-history-details>strong {font-size:12px;font-weight:600;}
+.ns-history-empty {min-height:118px;background:#f7f7f082;border:1px dashed #b5c2b0;border-radius:4px;color:#4c5d50;}
+
+/* Background art is deliberately faded on the graph: outputs remain the focus. */
+.ns-studio {
+  background-color:var(--ns-canvas);
+  background-image:linear-gradient(#eef0eade,#eef0eade),var(--ns-art-paper);
+  background-size:cover;background-position:center;background-repeat:no-repeat;
+}
+.ns-canvas-toolbar {background:#f7f7ef80;border-bottom:1px solid #b9c5b42b;}
+.ns-canvas-toolbar .ns-small-label {color:#2a3a32;font-size:17px;font-weight:650;letter-spacing:.025em;}
+.ns-canvas-toolbar p {color:#6c7a70;font-size:12px;}
+.ns-canvas-controls .ns-button {background:#f9f9f0b8;border-color:#c7d0c0;}
+.ns-canvas-controls .ns-button:hover {background:#e8ecdf;border-color:#a7b5a1;}
+.ns-node-card {box-shadow:inset 0 1px 0 #fff5;background-color:var(--node-color);}
+.ns-node-card::before {
+  background-image:var(--ns-art-paint);background-size:480px 480px;background-position:center;
+  mix-blend-mode:soft-light;opacity:.36;
+}
+.ns-node-card:hover {filter:brightness(1.065);}
+.ns-node-head {text-shadow:0 1px 2px #342b2910;}
+.ns-node-head strong {letter-spacing:.035em;font-weight:650;}
+.ns-node-status {letter-spacing:.015em;}
+.ns-wear-reveal {background-color:#e0e2d8;background-image:var(--ns-art-paint);background-size:440px 440px;background-blend-mode:screen;}
+.ns-wear-reveal img {filter:drop-shadow(0 2px 2px #1b29221a);}
+.ns-wear-surface {opacity:.37;}
+.ns-node-empty {opacity:.87;}
+.ns-node-empty small {font-size:11px;line-height:1.6;}
+.ns-attachment {border-color:#aab8ac;border-radius:2px;box-shadow:0 2px 3px #2c3d2b0b;}
+.ns-attachment::before {background-image:var(--ns-art-paint);background-size:240px 240px;mix-blend-mode:soft-light;opacity:.16;}
+.ns-attachment:hover {border-color:#658074;filter:brightness(1.025);}
+.ns-attachment.selected {outline-color:var(--ns-accent);}
+.ns-route-band {background:#f7f8ee28;border-color:#9eafa038;}
+.ns-graph-links path {stroke:#8d9e8b;}
+.ns-junction-card {color:#566d5c;background:#e2e7d9;border:1px solid #adbca7;box-shadow:inset 0 1px 0 #ffff;}
+.ns-junction-card::before {background-image:var(--ns-art-paint);background-size:300px 300px;mix-blend-mode:soft-light;opacity:.2;}
+.ns-junction-card:hover {background:#d9e1ce;border-color:#83947b;}
+
+/* A single tool shelf, with small stock labels rather than more content panels. */
+.ns-selection-bar {background:#f9f9f1e8;border-color:#bac7b3;box-shadow:0 -4px 18px #243d2804;}
+.ns-selection-bar strong {font-weight:650;color:#324538;}
+.ns-selection-bar span {color:#6e7e70;}
+.ns-dock {background:#f8f7f1f5;border-top:1px solid #c5cebe;}
+.ns-category-tab {font-weight:500;color:#64745f;}
+.ns-category-tab.active {color:var(--ns-accent);font-weight:650;}
+.ns-category-tab.active::after {background:var(--ns-accent);}
+.ns-bookmark {background-color:var(--node-soft);box-shadow:inset 0 1px 0 #fff7;}
+.ns-bookmark::before {background-image:var(--ns-art-paint);background-size:330px 330px;mix-blend-mode:soft-light;opacity:.2;}
+.ns-bookmark strong {letter-spacing:.02em;font-weight:600;}
+.ns-bookmark:hover {filter:brightness(.96);}
+.ns-stash-shelf {border-color:#c1cbb9;}
+.ns-shelf-heading strong {color:#4b5c4b;font-weight:600;}
+.ns-shelf-card {background:#fafaf1;border-color:#c0cdb7;border-radius:3px;}
+.ns-shelf-empty {border-color:#adbea4;color:#667b5e;}
+.ns-studio-foot {background:#f8f7f1;color:#74816e;}
+.ns-toast {background:#2b3b31;border-radius:4px;box-shadow:0 5px 24px #17291f26;}
+
+/* Arrival uses the same artwork, only once; action-driven transition stays in JS. */
+.ns-entry-splash {background:#f5f4ec;color:#2b3933;}
+.ns-entry-splash::before {background-image:var(--ns-art-paper);background-size:cover;background-position:center;opacity:.56;}
+.ns-splash-symbol {width:280px;height:150px;margin-bottom:24px;filter:drop-shadow(0 3px 6px #34432f12);}
+.ns-splash-symbol svg {width:280px;height:150px;}
+.ns-splash-symbol>svg>path:first-child {fill:#adc0bb;}
+.ns-splash-symbol .ns-splash-slash>path:first-child {fill:#ad3c2e;}
+.ns-splash-title {font-size:31px;font-weight:650;letter-spacing:.2em;}
+.ns-splash-status {font-size:12px;color:#667a68;}
+.ns-splash-parts {color:#76866f;}
+.ns-splash-parts i[data-state=done] {background:#dde5d4;color:#4f6949;border-color:#c4cfba;}
+.ns-entry-flight {border-radius:0;box-shadow:0 10px 36px #34433226;}
+.ns-entry-slit i:first-child {background:#a63b2e8f;}
+
+@media(max-height:800px) and (min-width:1001px) {
+  .ns-entry {padding-top:29px;padding-bottom:26px;column-gap:48px;}
+  .ns-entry-heading {padding-top:14px;}
+  .ns-entry-heading h1 {font-size:36px;line-height:1.4;margin-top:12px;}
+  .ns-entry .ns-upload-front {height:280px;min-height:280px;padding-top:30px;padding-bottom:30px;}
+  .ns-entry-history {margin-top:29px;padding-top:19px;}
+  .ns-history-picture {height:85px;}
+}
+@media(max-width:1100px) {
+  .ns-entry {grid-template-columns:minmax(255px,300px) minmax(400px,1fr);column-gap:28px;padding:35px 35px 30px;}
+  .ns-entry-heading h1 {font-size:36px;}
+  .ns-entry .ns-upload-front {padding-inline:56px;height:300px;min-height:300px;}
+  .ns-entry .ns-upload-caption strong {font-size:17px;}
+  .ns-entry .ns-upload-side {gap:15px;padding-inline:12px;}
+  .ns-entry .ns-tag-note p {font-size:11px;}
+  .ns-entry-actions {gap:5px;}
+  .ns-entry .ns-start {min-width:168px;}
+}
+@media(max-width:850px) {
+  .ns-entry {display:block;padding:28px 25px 30px;}
+  .ns-entry-heading {padding:0;max-width:620px;margin:0 auto 22px;}
+  .ns-entry-heading h1 {max-width:none;font-size:33px;margin:9px 0;}
+  .ns-entry-heading p {max-width:480px;}
+  .ns-upload-stage {max-width:620px;margin:auto;}
+  .ns-entry .ns-upload-front {height:300px;min-height:280px;}
+  .ns-entry-actions,.ns-entry-foot,.ns-entry-status {max-width:620px;margin-left:auto;margin-right:auto;}
+  .ns-entry-history {max-width:620px;margin:28px auto 0;}
+}
+@media(max-width:480px) {
+  .ns-entry {padding:24px 16px;}
+  .ns-entry-heading h1 {font-size:29px;}
+  .ns-entry .ns-upload-front {height:270px;min-height:270px;padding:30px 45px 30px 52px;gap:10px;clip-path:polygon(0 0,calc(100% - 34px) 0,100% 50%,calc(100% - 34px) 100%,0 100%,30px 50%);}
+  .ns-entry .ns-upload-caption strong {font-size:15px;}
+  .ns-entry .ns-upload-caption small {font-size:10px;}
+  .ns-entry .ns-front-preview {width:45%;flex-basis:45%;}
+  .ns-entry .ns-upload-side {padding-inline:4px;}
+  .ns-entry .ns-back-upload>span:first-of-type {width:40px;height:44px;}
+  .ns-entry .ns-tag-note p {max-width:190px;}
+  .ns-history-heading {gap:8px;flex-wrap:wrap;}
+  .ns-history-heading h2 {font-size:17px;}
+  .ns-history-heading>span {font-size:10px;}
+}
+@media(prefers-reduced-motion:reduce) {
+  .ns-button,.ns-icon-button,.ns-history-card {transition:none;}
+}

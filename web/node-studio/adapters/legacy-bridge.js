@@ -46,7 +46,7 @@ export function openLegacyWorkspace(container, {
   const toolbar = document.createElement('div');
   toolbar.style.cssText = 'display:flex;align-items:center;gap:12px;flex-wrap:wrap';
   const status = document.createElement('span'); status.setAttribute('role', 'status');
-  status.style.cssText = 'font-size:13px;opacity:.8;flex:1;min-width:180px';
+  status.style.cssText = 'font-size:13px;flex:1;min-width:180px';
   status.textContent = mode === 'mapping' ? '正在打开已验证的对应点映射工作区…' : '正在打开独立笔触与服装表面工作区…';
   const save = button('保存并返回节点', () => {
     if (destroyed || saving || !ready) return;
@@ -58,7 +58,17 @@ export function openLegacyWorkspace(container, {
   toolbar.append(status, exit, save);
   const iframe = document.createElement('iframe');
   iframe.title = mode === 'mapping' ? '衣片展平与痕迹映射工作区' : '服装精致修改工作区';
-  iframe.style.cssText = 'flex:1;min-height:480px;width:100%;border:1px solid #ffffff24;border-radius:12px;background:#102b33';
+  iframe.style.cssText = 'flex:1;min-height:480px;width:100%;border:1px solid var(--ns-line);border-radius:3px;background:var(--ns-canvas)';
+  // The existing brush engine remains in its own document; theme only its chrome.
+  iframe.addEventListener('load', () => {
+    if (destroyed) return;
+    const doc = iframe.contentDocument;
+    if (!doc?.head || doc.querySelector('[data-relic-workspace-theme]')) return;
+    const sheet = doc.createElement('link');
+    sheet.rel = 'stylesheet'; sheet.href = '/web/node-studio/styles/workspace-theme.css';
+    sheet.dataset.relicWorkspaceTheme = 'true'; doc.head.append(sheet);
+    const v09 = doc.createElement('link');v09.rel='stylesheet';v09.href='/web/node-studio/styles/v09-workspaces.css';doc.head.append(v09);
+  });
   const query = new URLSearchParams({ nodeEmbed: '1', workflowId: workflow.id, nodeId: node.id, mode, channel });
   if (source.projectId) query.set('projectId', source.projectId);
   iframe.src = '/legacy?' + query + '#studio';

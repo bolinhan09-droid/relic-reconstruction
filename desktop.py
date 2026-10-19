@@ -217,6 +217,16 @@ def main():
                                     'global.ok': '确定', 'global.cancel': '取消'})
     finally:
         if child and child.poll() is None:
+            # Release only model children owned by this backend before Windows
+            # terminates it. Stop routes never kill an unrelated port/process.
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            for route in ('/api/local-image/stop', '/api/local-ai/stop'):
+                try:
+                    request = urllib.request.Request(f'http://127.0.0.1:{args.port}{route}', data=b'{}', headers={'Content-Type':'application/json'}, method='POST')
+                    with opener.open(request, timeout=4) as response:
+                        response.read(4096)
+                except Exception:
+                    pass
             child.terminate()
             try:
                 child.wait(timeout=8)

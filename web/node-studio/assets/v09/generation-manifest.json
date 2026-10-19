@@ -1,0 +1,28 @@
+{
+  "version": "0.9",
+  "generatedWith": "Built-in image_gen.imagegen; no user API key used",
+  "purpose": "Original local UI material assets for the bright constructivist costume-creation worktable",
+  "consumer": "web/node-studio/styles/v09-visual.css",
+  "assets": [
+    {
+      "file": "constructivist-paper.png",
+      "use": "Entry, loading, and quietly faded graph-canvas artwork",
+      "sourceFile": "exec-e33ee75c-5a9a-44b7-949e-883a2ceeb3d3.png",
+      "prompt": "Use case: stylized-concept. Asset type: real background art for a professional desktop costume design application, widescreen 16:9, high resolution. Create a quiet ivory-gray (#eeefea, #f8f7f1) paper-and-worn-pigment constructivist composition. Center 65% must remain very calm, almost empty pale gray, suitable for placing interactive chevron nodes on top. Only at the far LEFT and RIGHT edges, elegant cropped geometric forms: architectural half arches, thin concentric arcs, one oblique strip, restrained blocks, dusty blue-gray #567581 and faded terracotta red #ad3c2e, small muted ochre fragment. Everything looks like finely printed pigments rubbed and scratched on archival craft paper: worn boundaries, stipple, tiny irregular rubbed patches where two colors intermix; beautiful subtle tactile print detail. Overall BRIGHT not dark, color shapes should be softly tinted, low saturation, very low contrast, no cinematic shadows. Composition deliberate, modern constructivist editorial art, not UI screenshot. Maintain enough visible texture to feel crafted but it must not compete with clothing images or dark UI labels. NO text, no typography, no labels, no logos, no watermark, no people, no clothes, no red circle annotations, no icons, no gradients, no grunge stains across central empty area. This is an original abstract graphic material, not an existing game screen."
+    },
+    {
+      "file": "paint-abrasion.png",
+      "use": "Soft-light surface on upload tag, graph tags, attachments, and tool bookmarks",
+      "sourceFile": "exec-833f48eb-21bd-4e0e-9fc4-168cfb2d938a.png",
+      "prompt": "Use case: stylized-concept. Asset type: flat scanned monochrome wear texture for use as a surface blend in a desktop UI tag. Square 1:1 high resolution. A macro straight-on material swatch of aged painted metal, finely scratched and dry-abrasion worn, grayscale only. The BASE is middle/light gray with many tiny charcoal flecks, hairline dark scuffs, dense short diagonal abrasions in multiple differing directions, fine irregular porous chipped-paint boundaries revealing lighter silver underneath. No perspective, no object, no edge border, no frame, no illumination gradient, uniform micro texture throughout edge to edge, not a photograph of a complete metal object. A sophisticated subtle printing plate texture: 85% medium pale gray, 10% quiet hairline and micro pits, 5% occasional larger irregular scuffed patches. Avoid a big circular worn patch, avoid centered focal pattern, avoid long symmetrical strokes, avoid large black marks, avoid dirt/rust brown. No text, no symbols, no watermark. It needs to look like finely distressed pigment, tactile detail visible close up, not visual noise. Seamless-feeling spatially even distribution suitable for tiling."
+    }
+  ],
+  "verification": {
+    "assetInspection": "Both source images visually inspected before copying into the project",
+    "entryPreviewWidths": [1440, 1024, 390],
+    "liveBackendPreviewWidths": [1440, 1024],
+    "liveBrowserErrors": [],
+    "horizontalDocumentOverflow": false,
+    "evidenceDirectory": "work/v09-visual-check"
+  }
+}

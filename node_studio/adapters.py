@@ -16,6 +16,7 @@ from PIL import Image, ImageOps
 
 from .catalog import BY_TYPE
 from .fabrication import export_stencil
+from .graph import preceding_ids, branches_for, merge_for, merge_candidates
 from .store import bounded_copy, fail, now, safe_id
 
 
@@ -31,17 +32,8 @@ def _owner(workflow, identifier):
 
 
 def preceding_nodes(workflow, node):
-    index_id = node["id"]
-    seen = set()
-    while index_id not in workflow["order"] and index_id not in seen:
-        seen.add(index_id)
-        index_id = _owner(workflow, index_id)
-        if index_id is None:
-            break
     by_id = _nodes(workflow)
-    if index_id in workflow["order"]:
-        return [by_id[identifier] for identifier in workflow["order"][:workflow["order"].index(index_id)]]
-    return [entry for entry in workflow["nodes"] if entry["type"] == "garment_input" and entry["id"] != node["id"]]
+    return [by_id[identifier] for identifier in preceding_ids(workflow, node["id"])]
 
 
 def garment_asset(workflow):
@@ -76,6 +68,8 @@ def current_base(core, workflow, node):
     local_image_path(core, asset["url"])
     inherited = {"imageUrl": asset["url"], "originalImageUrl": asset["url"], "garmentSource": asset}
     for preceding in preceding_nodes(workflow, node):
+        if preceding["type"] in {"branch_create", "branch_merge"}:
+            continue
         output = preceding.get("output") or {}
         if output.get("imageUrl"):
             local_image_path(core, output["imageUrl"])
@@ -201,6 +195,25 @@ def _task(core, workflow, node):
     if node["type"] == "blend_create":
         candidates = params.get("candidateIds", [])
         weights = params.get("weights", [])
+        merge = merge_for(workflow, node)
+        if merge:
+            available = merge_candidates(workflow, merge)
+            allowed = {candidate["nodeId"] for candidate in available}
+            if not candidates:
+                if len(available) > 3:
+                    fail("合拢中有多个方案，请先选择其中 2–3 个进行融合")
+                candidates = [candidate["nodeId"] for candidate in available]
+                weights = [1 / len(candidates)] * len(candidates) if candidates else []
+                params.update(candidateIds=candidates, weights=weights)
+            if any(identifier not in allowed for identifier in candidates):
+                fail("融合候选已不属于当前合拢，请从当前探索路线重新选择")
+        else:
+            # Earlier versions kept comparison candidates on the detached
+            # shelf. Preserve those explicit references while preventing a
+            # live sibling route from leaking into an unrelated branch.
+            available = set(preceding_ids(workflow, node["id"])) | set(workflow.get("stash", []))
+            if any(identifier not in available for identifier in candidates):
+                fail("融合候选须来自当前路线的上游，其他路线请通过方案合拢连接")
         if not isinstance(candidates, list) or not 2 <= len(candidates) <= 3 or len(set(candidates)) != len(candidates):
             fail("融合创作请选择 2–3 个不同的已输出候选")
         if not isinstance(weights, list) or len(weights) != len(candidates):
@@ -222,7 +235,13 @@ def _task(core, workflow, node):
                     weights=[round(weight / sum(weights), 6) for weight in weights],
                     baseNodeId=base_id, effectScope=params.get("effectScope", "all"),
                     preciseSemanticInterpolation=False)
+        features = params.get("featureSources", {})
+        if not isinstance(features, dict) or set(features) - {"blood", "slash", "wear", "burn"} or any(value and value not in candidates for value in features.values()):
+            fail("特征来源须为当前参与融合的候选")
+        task["featureSources"] = copy.deepcopy(features)
         task["prompt"] += "\n融合偏好：" + _text({key: task[key] for key in ("candidateIds", "weights", "effectScope")})
+        if features:
+            task["prompt"] += "\n独立特征来源（优先于总体权重）：" + _text(features)
     return {**base, "kind": "generation_task", "task": task, "prompt": task["prompt"],
             "intent": task["intent"], "message": "任务已准备，尚未调用模型；连接图像生成节点后点击生成。",
             "apiRequest": False, "semanticAI": False}
@@ -312,7 +331,12 @@ def _generate(core, workflow, node, payload, request):
         fail("请明确确认调用在线图像接口；连接节点或保存配置不会自动生成，也不会扣费", 409)
     core.require_local_origin(request)
     base = current_base(core, workflow, node)
-    tasks = [entry.get("output", {}).get("task") for entry in preceding_nodes(workflow, node) if entry.get("output")]
+    preceding = preceding_nodes(workflow, node)
+    last_merge = max((index for index, entry in enumerate(preceding) if entry["type"] == "branch_merge"), default=-1)
+    last_task = max((index for index, entry in enumerate(preceding) if (entry.get("output") or {}).get("task")), default=-1)
+    if last_merge > last_task:
+        fail("当前合拢包含多个方案，请先接入融合创作并准备融合任务，再生成图片")
+    tasks = [entry.get("output", {}).get("task") for entry in preceding if entry.get("output")]
     task = next((value for value in reversed(tasks) if value), None)
     if not task and not params.get("intent"):
         fail("请先准备快速生成、局部选区或融合任务，或填写本次精修要求")
@@ -388,6 +412,12 @@ def _guide(core, workflow, node):
 
 def run_node(core, workflow, node, payload, request):
     kind, params = node["type"], node["params"]
+    if kind in {"intent_assist", "design_advice", "design_review", "agent_execute"}:
+        from .assistant_engine import run_assistant
+        return run_assistant(core, workflow, node, payload, request)
+    if kind in {"garment_split", "garment_flatten"}:
+        from .garment_jobs import adopt_artifact
+        return adopt_artifact(core, workflow, node, payload)
     if BY_TYPE[kind]["capability"] == "planned":
         return {"kind": "not_implemented", "implemented": False, "message": "该概念入口已保留，当前尚未接入真实运行能力。", "status": "planned"}
     if kind == "garment_input":
@@ -409,11 +439,33 @@ def run_node(core, workflow, node, payload, request):
     if kind in {"scene_context", "production_context", "character_research"}:
         return {**current_base(core, workflow, node), "kind": "context", "context": copy.deepcopy(params),
                 "message": "设定已保存；既有图片保持原版，新操作采用当前条件。", "semanticAI": False}
+    if kind == "branch_create":
+        return {**current_base(core, workflow, node), "kind": "branches",
+                "branches": [{"id": branch["id"], "label": branch["label"], "nodeCount": len(branch["order"])}
+                             for branch in branches_for(workflow, node["id"])],
+                "message": "各路线从同一份上游方案开始，修改互不覆盖。", "apiRequest": False}
+    if kind == "branch_merge":
+        candidates = merge_candidates(workflow, node)
+        all_ids = {candidate["nodeId"] for candidate in merge_candidates(workflow, node, all_candidates=True)}
+        if any(identifier not in all_ids for identifier in params.get("selectedCandidateIds", [])):
+            fail("部分合拢候选已被新的路线结果替代，请重新选择")
+        if len(candidates) < 2:
+            fail("请先在至少两条路线保存图片结果，再合拢方案")
+        for candidate in candidates:
+            local_image_path(core, candidate["imageUrl"])
+        return {"kind": "candidate_set", "candidates": candidates, "mergeNodeId": node["id"],
+                "candidateIds": [candidate["nodeId"] for candidate in candidates],
+                "baseImageUrl": current_base(core, workflow, node)["imageUrl"],
+                "message": "多个方案已收集；接入融合创作后选择偏好，不会自动拼图或调用模型。", "apiRequest": False}
     if kind in {"quick_create", "region_generate", "blend_create"}:
-        return _task(core, workflow, node)
+        result = _task(core, workflow, node)
+        if kind == "blend_create" and payload.get("blendAction") == "editable":
+            from .blend_tools import blend_editable
+            return blend_editable(core, workflow, node, result["task"])
+        return result
     if kind == "image_generate":
         return _generate(core, workflow, node, payload, request)
-    if kind in {"precision_edit", "garment_split", "flatten_map"}:
+    if kind in {"precision_edit", "flatten_map"}:
         base = current_base(core, workflow, node)
         project = ensure_project(core, workflow, node, base)
         workspace = {"precision_edit": "brush", "garment_split": "regions", "flatten_map": "mapping"}[kind]
@@ -426,49 +478,9 @@ def run_node(core, workflow, node, payload, request):
                 "workspace": "gesture" if kind == "gesture_simulation" else "battle", "status": "ready",
                 "experimental": True, "implemented": True, "physicalSimulation": False,
                 "cameraRecognition": False, "apiRequest": False, "semanticAI": False,
-                "message": ("请在实验工作区用鼠标或触控动作制作痕迹草稿；摄像头手势识别尚未接通。" if kind == "gesture_simulation"
-                            else "请在二维战斗实验工作区记录交战事件并生成程序笔触；不是完整三维战斗或真实物理模拟。")}
-    if kind == "intent_assist":
-        base, context = current_base(core, workflow, node), context_for(workflow, node)
-        intent = _text(params.get("intent") or params.get("prompt"))
-        if not intent.strip():
-            fail("请先写下你希望的改造效果")
-        return {**base, "kind": "intent", "title": "创作需求卡", "intent": intent,
-                "prompt": _prompt(node, context), "items": [{"label": "用户想法", "value": intent},
-                {"label": "保留条件", "value": "真实衣服廓形、人物身份、姿态、关键装饰与背景"},
-                {"label": "待确认", "value": "具体位置、程度及材料表现由用户确认"}],
-                "provider": "local_rules", "semanticAI": False, "message": "本地规则整理，未调用大模型、未识别照片。"}
-    if kind == "design_advice":
-        base = current_base(core, workflow, node)
-        return {**base, "kind": "suggestions", "title": "可选择的创作方向", "provider": "local_rules", "semanticAI": False,
-                "suggestions": [
-                    {"id": "focus", "title": "先确定一处主痕迹", "detail": "在你选定的位置集中表达冲击，再用少量碎点或磨损呼应；位置需用户选择。", "action": "prepare_quick"},
-                    {"id": "layer", "title": "把飞溅与浸染分开", "detail": "飞溅控制方向、散布，浸染控制浓淡与边缘；先分层保存，再比较整体。", "action": "open_precision"},
-                    {"id": "sample", "title": "先比较干燥后的材料小样", "detail": "记录颜料、工具和干燥变化，不能只看生成图确认渗色或可洗性。", "action": "prepare_guide"}],
-                "message": "本地通用创作建议，未调用视觉 AI，也未声称看见具体画面问题。"}
-    if kind == "design_review":
-        return _review(core, workflow, node)
-    if kind == "agent_execute":
-        base = current_base(core, workflow, node)
-        selected = params.get("adviceSelection") or params.get("action")
-        if selected in {"prepare_guide", "sample"}:
-            result = _guide(core, workflow, node)
-            result.update(executedAction="prepare_guide", message="已执行本地制作指导整理；没有修改图片或调用在线服务。")
-            return result
-        if selected in {"prepare_quick", "focus"}:
-            candidate = copy.deepcopy(node)
-            candidate["type"] = "quick_create"
-            result = _task(core, workflow, candidate)
-            result.update(executedAction="prepare_quick", message="已准备整体生成任务；仍需进入图像生成节点明确执行。")
-            return result
-        if selected in {"open_precision", "layer"}:
-            candidate = copy.deepcopy(node)
-            candidate["type"] = "precision_edit"
-            result = run_node(core, workflow, candidate, payload, request)
-            result["executedAction"] = "open_precision"
-            return result
-        return {**base, "kind": "not_implemented", "implemented": False, "status": "ready",
-                "message": "请选择已支持的建议操作：准备整体任务、进入精修或整理制作指导。自动跨工具改图尚未接通。"}
+                "cameraRecognitionAvailable": kind == "gesture_simulation", "meshHitRecordingAvailable": kind == "battle_simulation",
+                "message": ("进入手势工作区，可点击开启本机手部识别，或使用鼠标触控创作。" if kind == "gesture_simulation"
+                            else "进入三维服装实验台，旋转模型并挥刀记录实际表面命中；代理衣服尚未与照片配准。")}
     if kind == "production_guide":
         return _guide(core, workflow, node)
     if kind == "stencil_export":

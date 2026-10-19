@@ -27,6 +27,11 @@ def _idle(core):
         fail("已有图像任务正在执行，请等待完成后再生成", 409)
 
 
+def _local_qwen_small(settings):
+    return (settings.get("provider") == "local_openai" and settings.get("model") == "sd-cpp-local"
+            and str(settings.get("baseUrl", "")).rstrip("/") == "http://127.0.0.1:8190/v1")
+
+
 def region_job(core, view, project, provider):
     settings, secret = _settings(view, provider)
     original = core.load_rgb(core.local_image(project))
@@ -60,17 +65,31 @@ def _blend_worker(core, identifier, project, settings, secret, paths, task):
         working = original.copy()
         working.thumbnail((2048, 2048))
         images = [manual._png(working)]
-        for path in paths:
+        small_qwen = _local_qwen_small(settings)
+        input_candidates = []
+        if small_qwen:
+            base_index = task["candidateIds"].index(task["baseNodeId"])
+            input_candidates.append({"imageIndex": 1, "candidateId": task["baseNodeId"], "weight": task["weights"][base_index], "primary": True})
+        for index, path in enumerate(paths):
+            if small_qwen and task["candidateIds"][index] == task["baseNodeId"]:
+                continue  # The selected base candidate is already the primary image.
             image = core.load_rgb(path)
             image.thumbnail((2048, 2048))
             images.append(manual._png(image))
+            if small_qwen:
+                input_candidates.append({"imageIndex": len(images), "candidateId": task["candidateIds"][index], "weight": task["weights"][index], "primary": False})
         prompt = (task["prompt"] + "\n第一张是真实服装当前版本；后续图片按候选顺序提供外观参考。"
                   "只按指定权重与作用范围参考战损，不叠加重影，不替换第一张的人物身份、姿态、构图、衣服轮廓或背景。"
                   "权重表达用户偏好，不宣称数学准确的图像语义插值。\n")
+        if small_qwen:
+            prompt += "第一张已代表基准候选，不再重复上传。实际图片与候选对应如下：\n" + "\n".join(
+                f"图片{row['imageIndex']}：候选ID={row['candidateId']}，偏好权重={row['weight']:.6f}" + ("，保持人物与构图的基准图。" if row["primary"] else "，战损外观参考图。")
+                for row in input_candidates)
         core.write_json(folder / "configuration.json", {**settings, "mode": "node_multi_reference_blend",
                         "prompt": prompt, "requestCount": 1, "automaticRetry": False, "inputImageCount": len(images),
                         "weights": task["weights"], "effectScope": task["effectScope"], "physicalSimulation": False,
-                        "preciseSemanticInterpolation": False, "pixelProtectionVerified": False})
+                        "preciseSemanticInterpolation": False, "pixelProtectionVerified": False,
+                        **({"inputCandidates": input_candidates, "duplicateBaseReferenceRemoved": True} if small_qwen else {})})
         core.write_json(folder / "project-snapshot.json", project)
         core.update_job(identifier, status="running", progress=.15, message="正在按候选偏好生成融合方案，本次只提交一个请求")
         content, metadata = provider.edit(images, prompt, None, settings, secret)
@@ -78,6 +97,12 @@ def _blend_worker(core, identifier, project, settings, secret, paths, task):
             raise provider.CloudError("融合结果超过图片大小上限；未再次调用接口。")
         generated = manual._decode(content)
         (folder / "api-output.png").write_bytes(manual._png(generated))
+        safe_metadata = {name: metadata[name] for name in ("provider", "model", "quality", "requestId", "usage", "baseUrl",
+            "processingSize", "originalSize", "referenceSizes", "resizeApproximation", "maskStrategy", "serverMask",
+            "researchOnly", "license", "localOnly", "billing", "imageEditingVerified") if name in metadata}
+        core.write_json(folder / "generation-source.json", {**safe_metadata, "artifactKind": "draft", "generatedAt": core.now(),
+                        "mode": "node_multi_reference_blend", "requestCount": 1, "serverMask": bool(metadata.get("serverMask", False)),
+                        "physicalSimulation": False})
         final, receipt = quick_draft._aligned(generated, original)
         with core.LOCK:
             quick_draft._source_still_current(core, project, source_path, raw_source)
@@ -91,6 +116,12 @@ def _blend_worker(core, identifier, project, settings, secret, paths, task):
 def blend_job(core, view, project, provider, task, paths):
     import quick_draft
     settings, secret = _settings(view, provider)
+    if _local_qwen_small(settings):
+        if len(paths) != 2:
+            fail("本机千问研究版融合目前只验证了两个候选；请选择两个候选，或改用支持更多参考图的图像模型。未创建任务或发送请求。")
+        if (len(task.get("candidateIds", [])) != 2 or len(set(task["candidateIds"])) != 2
+                or len(task.get("weights", [])) != 2 or task.get("baseNodeId") not in task["candidateIds"]):
+            fail("融合候选与基准信息不一致，请重新准备两个候选。未创建任务或发送请求。")
     if settings["provider"] == "qwen" and str(settings["model"]).startswith("qwen-image-3.0") and len(paths) + 1 > 3:
         fail("当前千问模型最多接收 3 张图；请选择两个候选，或改用支持更多参考图的图像模型。未发送请求。")
     with core.LOCK:

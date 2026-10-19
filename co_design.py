@@ -33,9 +33,9 @@ _LOCK = threading.RLock()
 _CHAT = threading.BoundedSemaphore(1)
 _ACTIVE = "deepseek"
 _SETTINGS = {
-    "deepseek": {"baseUrl": "https://api.deepseek.com/v1", "model": "deepseek-flash", "apiKey": "", "vision": False},
+    "deepseek": {"baseUrl": "https://api.deepseek.com/v1", "model": "deepseek-flash", "apiKey": "", "vision": True},
     "openai_compatible": {"baseUrl": "", "model": "", "apiKey": "", "vision": False},
-    "local_openai": {"baseUrl": "http://127.0.0.1:11434/v1", "model": "", "apiKey": "", "vision": False},
+    "local_openai": {"baseUrl": "http://127.0.0.1:8188/v1", "model": "qwen3.5-4b-local", "apiKey": "", "vision": True},
 }
 TYPES = {"blood", "slash", "wear", "burn"}
 LABELS = {"blood": "血迹", "slash": "刀痕", "wear": "磨损", "burn": "焦痕"}

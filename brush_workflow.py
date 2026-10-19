@@ -648,17 +648,23 @@ def _generate(core, identifier, project, settings, key, path, raw, original, mas
         transparent.putalpha(ImageOps.invert(mask.resize(working.size, Image.Resampling.NEAREST)))
         prompt = _prompt(core, project, original.size, reference is not None)
         server_mask = settings["provider"] in {"openai", "openai_compatible", "local_openai"}
-        core.write_json(folder / "configuration.json", {**settings, "artifactKind": "costume", "mode": "cloud_brush_refine",
+        configuration = {**settings, "artifactKind": "costume", "mode": "cloud_brush_refine",
             "prompt": prompt, "maskSource": _mask_source(project), "guideIsAIResult": False, "requestCount": 1,
             "automaticRetry": False, "inputImageCount": len(images), "serverMask": server_mask, "physicalSimulation": False,
-            "sourceSha256": hashlib.sha256(raw).hexdigest()})
+            "sourceSha256": hashlib.sha256(raw).hexdigest()}
+        core.write_json(folder / "configuration.json", configuration)
         content, metadata = provider.edit(images, prompt, manual._png(transparent) if server_mask else None, settings, key)
+        server_mask = bool(metadata.get("serverMask", server_mask))
+        configuration["serverMask"] = server_mask
+        core.write_json(folder / "configuration.json", configuration)
         if len(content) > 48 * 1024 * 1024:
             raise provider.CloudError("接口图片超过平台大小限制，未再次调用接口。")
         decoded = manual._decode(content)
         (folder / "api-output.png").write_bytes(manual._png(decoded))
         (folder / "generated-original.png").write_bytes(manual._png(decoded))
-        safe_metadata = {name: metadata[name] for name in ("provider", "model", "quality", "requestId", "usage", "baseUrl") if name in metadata}
+        safe_metadata = {name: metadata[name] for name in ("provider", "model", "quality", "requestId", "usage", "baseUrl",
+            "processingSize", "originalSize", "referenceSizes", "resizeApproximation", "maskStrategy", "serverMask",
+            "researchOnly", "license", "localOnly", "billing", "imageEditingVerified") if name in metadata}
         core.write_json(folder / "generation-source.json", {**safe_metadata, "artifactKind": "costume", "maskSource": _mask_source(project),
                        "requestCount": 1, "serverMask": server_mask, "physicalSimulation": False})
         generated, receipt = _aligned(decoded, original)

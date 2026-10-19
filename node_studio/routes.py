@@ -63,6 +63,11 @@ def register_node_studio_routes(app, core):
             workflow = validate_workflow(workflow)
             node = next(entry for entry in workflow["nodes"] if entry["id"] == node_id)
             result = run_node(core, workflow, node, payload, request)
+            patch = result.pop("workflowPatch", None)
+            if patch:
+                from .assistant_engine import apply_workflow_patch
+                workflow = apply_workflow_patch(workflow, patch)
+                node = next(entry for entry in workflow["nodes"] if entry["id"] == node_id)
             node["status"] = result.get("status", "completed")
             node.pop("staleReason", None)
             if result.get("kind") != "not_implemented":

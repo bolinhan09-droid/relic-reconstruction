@@ -19,6 +19,7 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from .catalog import BY_TYPE
+from .graph import lanes, dependency_map, validate_structure
 
 MAX_BYTES = 3 * 1024 * 1024
 MAX_NODES = 200
@@ -157,10 +158,30 @@ def validate_workflow(value):
     if any(BY_TYPE[by_id[identifier]["type"]]["placement"] == "attachment" for identifier in order):
         fail("参考节点请连接到参考槽，不作为真实服装主线")
 
+    branches = result.setdefault("branches", [])
+    if not isinstance(branches, list) or len(branches) > MAX_NODES:
+        fail("探索路线须为有界列表")
     occupied = set(order) | set(stash)
-    dependencies = {identifier: set() for identifier in by_id}
-    for previous, current in zip(order, order[1:]):
-        dependencies[current].add(previous)
+    lane_ids = {"main"}
+    for branch in branches:
+        if not isinstance(branch, dict):
+            fail("探索路线须为对象")
+        identifier = safe_id(branch.get("id"))
+        if identifier in lane_ids:
+            fail("探索路线编号不能重复")
+        lane_ids.add(identifier)
+        fork_id = branch.get("forkId")
+        if not isinstance(fork_id, str) or by_id.get(fork_id, {}).get("type") != "branch_create":
+            fail("探索路线缺少有效分支起点")
+        branch["label"] = str(branch.get("label") or "未命名方案")[:80]
+        branch_order = branch.get("order")
+        if not isinstance(branch_order, list) or any(not isinstance(child, str) or child not in by_id for child in branch_order):
+            fail("探索路线引用了不存在的节点")
+        if len(branch_order) != len(set(branch_order)) or occupied.intersection(branch_order):
+            fail("每个节点只能位于一条路线或方案架")
+        if any(by_id[child]["type"] == "garment_input" or BY_TYPE[by_id[child]["type"]]["placement"] == "attachment" for child in branch_order):
+            fail("探索路线不能包含第二个服装输入或独立参考附件")
+        occupied.update(branch_order)
     for node in nodes:
         for slot, children in node["attachments"].items():
             for child in children:
@@ -172,7 +193,6 @@ def validate_workflow(value):
                 if child in occupied:
                     fail("附件节点已在其他位置连接，请先拆下")
                 occupied.add(child)
-                dependencies[node["id"]].add(child)
         params = node["params"]
         references = []
         if params.get("sourceNodeId"):
@@ -187,7 +207,11 @@ def validate_workflow(value):
         for identifier in references:
             if not isinstance(identifier, str) or identifier not in by_id:
                 fail("候选方案引用了不存在的节点")
-            dependencies[node["id"]].add(identifier)
+    try:
+        validate_structure(result, by_id)
+    except ValueError as exc:
+        fail(str(exc))
+    dependencies = dependency_map(result)
 
     visited, visiting = set(), set()
     def visit(identifier):
@@ -236,39 +260,26 @@ def stale_downstream(old, new):
     new_nodes = {node["id"]: node for node in new["nodes"]}
     changed = {identifier for identifier, node in new_nodes.items()
                if identifier not in old_nodes or _fingerprint(node) != _fingerprint(old_nodes[identifier])}
-    old_order, order = old.get("order", []), new["order"]
-    first_changed = len(order)
-    for index, identifier in enumerate(order):
-        if index >= len(old_order) or old_order[index] != identifier or identifier in changed:
-            first_changed = min(first_changed, index)
-        if any(child in changed for children in new_nodes[identifier]["attachments"].values() for child in children):
-            first_changed = min(first_changed, index)
-        params = new_nodes[identifier]["params"]
-        references = [params.get("sourceNodeId"), params.get("baseNodeId"),
-                      *params.get("sourceNodeIds", []), *params.get("candidateIds", [])]
-        if any(reference in changed for reference in references if reference):
-            first_changed = min(first_changed, index)
-    context_changed = _effective_context(old) != _effective_context(new)
-    if context_changed:
-        first_changed = min(first_changed, 0)
-    for index, identifier in enumerate(order):
-        node = new_nodes[identifier]
-        if index < first_changed or identifier not in old_nodes or not node.get("output"):
+    prior_dependencies, dependencies = dependency_map(old), dependency_map(new)
+    affected = changed | {identifier for identifier, parents in dependencies.items()
+                          if parents != prior_dependencies.get(identifier, set())}
+    if _effective_context(old) != _effective_context(new):
+        affected.update(new_nodes)
+    # Propagate only along actual dependency edges. Editing A does not mark B
+    # stale merely because its card happens to be drawn farther right.
+    growing = True
+    while growing:
+        growing = False
+        for identifier, parents in dependencies.items():
+            if identifier not in affected and parents.intersection(affected):
+                affected.add(identifier)
+                growing = True
+    for identifier in affected:
+        node, prior = new_nodes[identifier], old_nodes.get(identifier)
+        if not prior or not node.get("output") or node.get("output") != prior.get("output"):
             continue
-        prior = old_nodes[identifier]
-        # A node whose newly committed result changed is current; downstream
-        # results remain visible but are labelled as based on older inputs.
-        own_output_changed = node.get("output") != prior.get("output")
-        if own_output_changed:
-            continue
-        own_params_changed = effective_params(node) != effective_params(prior)
-        own_dependencies_changed = any(child in changed for children in node["attachments"].values() for child in children)
-        params = node["params"]
-        own_dependencies_changed = own_dependencies_changed or any(reference in changed for reference in
-            [params.get("sourceNodeId"), params.get("baseNodeId"), *params.get("sourceNodeIds", []), *params.get("candidateIds", [])] if reference)
-        if index > first_changed or own_params_changed or own_dependencies_changed or old_order != order or context_changed:
-            node["status"] = "stale"
-            node["staleReason"] = "上游方案、设定或顺序已经更新；旧结果已保留，请确认后重新运行。"
+        node["status"] = "stale"
+        node["staleReason"] = "上游方案、设定或路线已经更新；旧结果已保留，请确认后重新运行。"
     return new
 
 

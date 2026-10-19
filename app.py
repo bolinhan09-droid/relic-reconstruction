@@ -43,7 +43,7 @@ EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix='relic-generatio
 TYPES = {'slash': '刀痕', 'blood': '血迹', 'burn': '烧焦'}
 GENERATION_PIPELINE = 'sd15_masked_img2img_v1'
 LOG = logging.getLogger('relic')
-app = FastAPI(title='遗迹重构 · 节点创作台', version='0.8.1')
+app = FastAPI(title='遗迹重构 · 节点创作台', version='0.10.0')
 
 
 @app.exception_handler(RequestValidationError)
@@ -485,7 +485,7 @@ def environment() -> dict:
 
 @app.get('/api/health')
 def health():
-    return {'ok': True, 'application': 'relic-reconstruction', 'version': '0.8.1', 'root': str(ROOT),
+    return {'ok': True, 'application': 'relic-reconstruction', 'version': '0.10.0', 'root': str(ROOT),
             'dataDir': str(DATA), 'themeUrl': '/data/theme.png' if (DATA / 'theme.png').is_file() else None}
 
 
@@ -1204,6 +1204,13 @@ register_surface_routes(app, sys.modules[__name__])
 
 from node_studio.routes import register_node_studio_routes
 register_node_studio_routes(app, sys.modules[__name__])
+
+from node_studio.garment_jobs import register_garment_job_routes
+register_garment_job_routes(app, sys.modules[__name__])
+from local_ai_runtime import register_local_ai_routes
+register_local_ai_routes(app, sys.modules[__name__])
+from local_image_runtime import register_local_image_routes
+register_local_image_routes(app, sys.modules[__name__])
 
 from node_studio.proximity import register_proximity_routes
 register_proximity_routes(app, sys.modules[__name__])

@@ -29,7 +29,9 @@ CORE_SOURCE = ['desktop.py', 'app.py', 'cloud_provider.py', 'co_design.py',
                'local_models.py', 'README.md', 'node_studio/__init__.py', 'node_studio/catalog.py',
                'node_studio/store.py', 'node_studio/routes.py', 'node_studio/adapters.py',
                'node_studio/generation.py', 'node_studio/fabrication.py', 'node_studio/proximity.py',
-               'node_studio/character_research.py']
+               'node_studio/character_research.py', 'node_studio/assistant_engine.py',
+               'node_studio/garment_tools.py', 'node_studio/garment_jobs.py', 'node_studio/blend_tools.py',
+               'local_ai_runtime.py', 'local_image_runtime.py']
 WEB_FILES = ['web/index.html', 'web/app.js', 'web/style.css', 'web/co-design.js',
              'web/co-design.css', 'web/brush-engine.js', 'web/brush-workbench.js',
              'web/node-studio/index.html', 'web/node-studio/app.js',
@@ -37,7 +39,13 @@ WEB_FILES = ['web/index.html', 'web/app.js', 'web/style.css', 'web/co-design.js'
              'web/node-studio/workspaces/index.js', 'web/node-studio/adapters/legacy-bridge.js',
              'web/node-studio/workspaces/magnifier.js', 'web/node-studio/adapters/proximity-sensor.js',
              'web/node-studio/workspaces/character-research.js', 'web/node-studio/workspaces/magnifier.css',
-             'tools/face_proximity_worker.py']
+             'tools/face_proximity_worker.py', 'tools/segment_garment.py',
+             'web/node-studio/workspaces/battle-3d.js', 'web/node-studio/workspaces/gesture-camera.js',
+             'web/node-studio/workspaces/garments.js', 'web/node-studio/styles/v010-workspaces.css',
+             'web/node-studio/vendor/three/build/three.module.js',
+             'web/node-studio/vendor/mediapipe/vision_bundle.mjs',
+             'web/node-studio/vendor/mediapipe/wasm/vision_wasm_internal.wasm',
+             'web/node-studio/vendor/mediapipe/models/hand_landmarker.task']
 RESOURCE_FILES = ['resources/catalog.json', 'resources/scenarios.json',
                   'resources/models.json', 'resources/capabilities.json',
                   'resources/craft_knowledge.json', 'resources/story_sources.json']
@@ -95,7 +103,9 @@ def path_reasons(path, source):
                                and app_parts[:2] == ['web', 'node-studio'])]
     if any(part in FORBIDDEN_DIRS for part in forbidden_parts):
         reasons.append(('development_or_user_directory', 'Development environment or user workspace must not be distributed.'))
-    if source and any(part in SOURCE_ONLY_DIRS for part in parts):
+    source_parts = [part for index, part in enumerate(parts)
+                    if not (part == 'build' and index == 4 and parts[:4] == ['web', 'node-studio', 'vendor', 'three'])]
+    if source and any(part in SOURCE_ONLY_DIRS for part in source_parts):
         reasons.append(('build_artifact_in_source', 'Curated source ZIP must not include build output or caches.'))
     # Only app-level data paths; third-party library resource folders may be named data.
     if app_parts and app_parts[0] in DATA_DIRS:

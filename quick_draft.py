@@ -189,10 +189,12 @@ def _generate_draft(core, job_id: str, project: dict, settings: dict, key: str,
             raise provider.CloudError("接口初稿图片超过平台大小限制，未再次调用接口。")
         generated = manual._decode(content)
         (folder / "api-output.png").write_bytes(manual._png(generated))
-        safe_metadata = {name: metadata.get(name) for name in ("provider", "model", "quality", "requestId", "usage", "baseUrl")
+        safe_metadata = {name: metadata.get(name) for name in ("provider", "model", "quality", "requestId", "usage", "baseUrl",
+                         "processingSize", "originalSize", "referenceSizes", "resizeApproximation", "maskStrategy", "serverMask",
+                         "researchOnly", "license", "localOnly", "billing", "imageEditingVerified")
                          if name in metadata}
         core.write_json(folder / "generation-source.json", {**safe_metadata, "artifactKind": "draft", "generatedAt": core.now(),
-                        "requestCount": 1, "serverMask": False, "physicalSimulation": False})
+                        "requestCount": 1, "serverMask": bool(metadata.get("serverMask", False)), "physicalSimulation": False})
         final, receipt = _aligned(generated, original)
         with core.LOCK:
             _source_still_current(core, project, source_path, raw_source)

@@ -15,7 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CODE = ['desktop.py', 'app.py', 'runtime_paths.py', 'local_models.py', 'cloud_provider.py',
         'co_design.py', 'brush_workflow.py', 'manual_workflow.py', 'quick_draft.py', 'garment_mapping.py',
-        'garment_correspondence.py', 'garment_shape_matching.py', 'surface_workflow.py', 'cloth_surface.py']
+        'garment_correspondence.py', 'garment_shape_matching.py', 'surface_workflow.py', 'cloth_surface.py',
+        'local_ai_runtime.py', 'local_image_runtime.py']
 DOCS = ['README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'LOCAL_MODELS.md', '.gitignore',
         'requirements.txt', 'requirements-desktop.txt', 'requirements-build.txt',
         'requirements-correspondence.txt', 'requirements-surface.txt',
@@ -39,9 +40,9 @@ def prepare(stage):
         if path.suffix.lower() in {'.js', '.css', '.html'}:
             copy_file(path.relative_to(ROOT).as_posix(), stage)
     # Explicit directories keep modular node code while excluding workspaces and caches.
-    for folder, suffixes in [('node_studio', {'.py'}), ('web/node-studio', {'.js', '.css', '.html', '.svg'}), ('docs', {'.md', '.txt'})]:
+    for folder, suffixes in [('node_studio', {'.py'}), ('web/node-studio', {'.js', '.mjs', '.wasm', '.task', '.css', '.html', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.json', '.md', '.txt'}), ('docs', {'.md', '.txt'})]:
         for path in (ROOT / folder).rglob('*'):
-            if path.is_file() and path.suffix.lower() in suffixes and '__pycache__' not in path.parts:
+            if path.is_file() and (path.suffix.lower() in suffixes or path.name in {'LICENSE', 'NOTICE'}) and '__pycache__' not in path.parts:
                 copy_file(path.relative_to(ROOT).as_posix(), stage)
     copy_file('web/assets/deepsea-fallback.svg', stage)
     copy_file('web/assets/relic.ico', stage)
@@ -58,7 +59,11 @@ def prepare(stage):
     for relative in ['models/README.md', 'models/manifest.example.json', 'tools/build_desktop.py', 'tools/check_desktop_distribution.py', 'tools/create_app_icon.py', 'tools/check_desktop_save.py',
                      'tools/dino_garment_correspondence.py', 'tools/download_correspondence_model.py',
                      'tools/analyze_garment_surface.py', 'tools/download_surface_models.py', 'tools/cloth_surface_algorithm.txt',
-                     'tools/face_proximity_worker.py']:
+                     'tools/face_proximity_worker.py', 'tools/segment_garment.py', 'tools/download_segmentation_model.py',
+                     'tools/install_qwen_local.py', 'tools/install_qwen_image_local.py', 'tools/install_browser_vision_assets.py',
+                     'tools/start_qwen_local.ps1', 'tools/stop_qwen_local.ps1',
+                     'tools/check_node_assistant.py', 'tools/check_garment_tools.py', 'tools/check_node_garments_api.py',
+                     'tools/check_editable_blend.py', 'tools/check_node_studio_backend.py', 'tools/check_node_studio_branches.py']:
         copy_file(relative, stage)
 
 
@@ -116,6 +121,9 @@ def main():
                    '--add-data', str(stage / 'web') + os.pathsep + 'web',
                    '--add-data', str(stage / 'resources') + os.pathsep + 'resources',
                    '--add-data', str(stage / 'tools' / 'face_proximity_worker.py') + os.pathsep + 'tools',
+                   '--add-data', str(stage / 'tools' / 'segment_garment.py') + os.pathsep + 'tools',
+                   '--add-data', str(stage / 'tools' / 'analyze_garment_surface.py') + os.pathsep + 'tools',
+                   '--add-data', str(stage / 'tools' / 'dino_garment_correspondence.py') + os.pathsep + 'tools',
                    '--add-data', str(licenses) + os.pathsep + 'third-party-licenses',
                    '--collect-data', 'webview', '--collect-all', 'pythonnet', '--collect-all', 'clr_loader',
                    '--hidden-import', 'webview.platforms.edgechromium', '--hidden-import', 'webview.platforms.winforms',

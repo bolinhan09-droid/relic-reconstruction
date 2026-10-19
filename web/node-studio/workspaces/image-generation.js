@@ -3,7 +3,7 @@ import { createWorkspace, el, field, actions, notice, uploadControl, inputFor, a
 const providerOptions = [{ value: 'openai', label: 'GPT 图像 · OpenAI' }, { value: 'qwen', label: '千问图像 · 百炼' }, { value: 'openai_compatible', label: 'OpenAI 兼容接口' }, { value: 'local_openai', label: '本机图像编辑服务' }];
 
 export async function imageGenerate(container, context) {
-  const ws = createWorkspace(container, context, { title: '在这里，真正生成一版', description: '模型和接口集中在这一步。配置会在不同图像生成节点间复用；只有点击生成才会提交图像请求。', kicker: 'IMAGE ENGINE' });
+  const ws = createWorkspace(container, context, { title: '图像生成', description: '确认要求，生成一版，再与原图比较。只有点击生成才提交图像请求。' });
   let settings = {};
   try { settings = await context.api('GET', '/api/settings/ai'); } catch (error) { ws.say(error.message, true); }
   if (ws.signal.aborted) return ws;
@@ -25,14 +25,18 @@ export async function imageGenerate(container, context) {
   function snapshot() { return settings.providers?.[provider.control.value] || {}; }
   function fill() {
     const current = snapshot(), custom = ['openai_compatible', 'local_openai'].includes(provider.control.value), local = provider.control.value === 'local_openai', qwen = provider.control.value === 'qwen';
-    model.control.value = (firstFill ? ws.params.model : '') || current.model || (qwen ? 'qwen-image-3.0-pro' : local ? '' : 'gpt-image-2');
+    model.control.value = (firstFill ? ws.params.model : '') || current.model || (qwen ? 'qwen-image-3.0-pro' : local ? 'sd-cpp-local' : 'gpt-image-2');
     quality.control.value = (firstFill ? ws.params.quality : '') || current.quality || (qwen || local ? 'auto' : 'medium'); quality.group.hidden = qwen || local;
-    baseURL.group.hidden = !custom; baseURL.control.value = current.baseUrl || (local ? 'http://127.0.0.1:1234/v1' : '');
+    baseURL.group.hidden = !custom; baseURL.control.value = local && !current.model ? 'http://127.0.0.1:8190/v1' : current.baseUrl || (local ? 'http://127.0.0.1:8190/v1' : '');
+    secretField.hidden = local;
+    localControls.hidden = !local;
     region.group.hidden = !qwen; workspaceID.group.hidden = !qwen;
     region.control.value = current.region || 'cn-beijing'; workspaceID.control.value = current.workspaceId || '';
     keyInput.value = ''; savedStatus.textContent = current.ready ? '此服务已有配置。连接及图像编辑能力仍需分别验证。' : '先保存此服务设置。连接检查只读取模型列表。';
-    billing.textContent = local ? '本机服务需已经启动，并支持图像编辑接口。此节点不会自动下载或启动模型。' : '这次生图按所选 API 服务计费，实际金额以服务商账单为准。';
+    billing.textContent = local ? '本机千问图像研究组件可按需启动。先停止视觉助手释放显存；图像与提示词留在电脑内。模型需独立安装。' : '这次生图按所选 API 服务计费，实际金额以服务商账单为准。';
     confirmGroup.hidden = local;
+    serviceSummary.textContent = `${providerOptions.find(item => item.value === provider.control.value)?.label || '图像服务'}${model.control.value ? ' · ' + model.control.value : ''}`;
+    if (firstFill) serviceDetails.open = !current.ready;
     firstFill = false;
   }
   function payload() {
@@ -81,6 +85,28 @@ export async function imageGenerate(container, context) {
     connectionStatus.textContent = '正在读取模型列表…'; const result = await context.api('POST', '/api/settings/ai/check', payload());
     connectionStatus.textContent = `${result.message || '已完成模型列表检查。'} 这不代表图像编辑已经验证。`;
   });
+  const serviceSummary = el('summary', { text: '图像服务设置' });
+  const localState = el('p', { role: 'status', class: 'ns-ws-status' });
+  const localStart = ws.button('启动本机千问生图', async () => {
+    const result = await context.api('POST', '/api/local-image/start', {}); localState.textContent = result.reason;
+    if (!['starting', 'ready'].includes(result.status)) throw Error(result.reason || '本机模型尚未就绪。');
+    for (let i=0; i<120 && !ws.signal.aborted; i++) {
+      const status = await context.api('GET', '/api/local-image/status'); localState.textContent = status.reason;
+      if (status.ready) {
+        provider.control.value = 'local_openai'; model.control.value = status.model; baseURL.control.value = status.baseUrl;
+        settings = await context.api('POST', '/api/settings/ai', payload()); ws.patch({provider:'local_openai',model:status.model,quality:'auto'}); await ws.save();
+        localState.textContent = status.imageEditingVerified ? '本机图像编辑已就绪 · 模型用于研究与评估。' : '服务已加载，图像编辑还需要实际验证。'; return;
+      }
+      if (!['starting', 'ready'].includes(status.status)) throw Error(status.reason || '本机生图未能启动。');
+      await new Promise(resolve=>setTimeout(resolve,2000));
+    }
+  });
+  const localControls = el('section', {}, notice('Qwen-Image-2.1 本机研究版 · 模型遵循 Qwen 研究许可，独立于软件安装包。'),
+    actions(localStart, ws.button('停止生图模型', async()=>{const status=await context.api('POST','/api/local-image/stop',{});localState.textContent=status.reason;}),
+      ws.button('停止视觉助手，释放显存', async()=>{const status=await context.api('POST','/api/local-ai/stop',{});localState.textContent=status.reason;})), localState);
+  const serviceDetails = el('details', { class: 'ns-ws-details ns-ws-provider-settings' }, serviceSummary,
+    provider.group, model.group, baseURL.group, secretField, region.group, workspaceID.group,
+    localControls, savedStatus, actions(saveSettings, check), connectionStatus);
   const generate = ws.button('生成一版', async () => {
     if (provider.control.value !== 'local_openai' && !confirm.checked) throw new Error('请先确认本次图片提交与接口计费。');
     // Save explicitly chosen settings before running; no retry or request on change.
@@ -93,7 +119,7 @@ export async function imageGenerate(container, context) {
   ws.on(provider.control, 'change', fill);
   ws.on(form, 'submit', event => event.preventDefault());
   ws.body.append(ws.preview(input), input.task ? notice(`上游任务：${input.task.prompt || input.task.intent || '已准备'}`) : notice('可接在快速生成、选区生图、融合或精修之后。'), form);
-  form.append(provider.group, el('div', { class: 'ns-ws-form-grid' }, model.group, quality.group, baseURL.group, secretField, region.group, workspaceID.group), mode.group, intent.group, savedStatus, actions(saveSettings, check), connectionStatus, billing, confirmGroup, actions(generate));
+  form.append(intent.group, el('div', { class: 'ns-ws-form-grid' }, mode.group, quality.group), serviceDetails, billing, confirmGroup, actions(generate));
   const manual = el('details', { class: 'ns-ws-details' }, el('summary', { text: '已有生成结果？直接导回' }), el('p', { text: '导回你在其他工具生成的图，并保留上游版本。不触发图像接口。' }), uploadControl(ws, context, '导入效果图片', async asset => {
     const output = { ...input, kind: 'garment', imageUrl: asset.url, reference: asset, asset,
       sourceBrushStrokes: input.brushStrokes || input.sourceBrushStrokes || [], originalProjectSnapshot: input.projectSnapshot || input.originalProjectSnapshot || null,

@@ -4,12 +4,14 @@ from __future__ import annotations
 import base64
 import binascii
 import ipaddress
+import io
 import os
 import re
 import threading
 from urllib.parse import urlparse
 
 import httpx
+from PIL import Image, ImageOps, UnidentifiedImageError
 import runtime_paths
 from runtime_paths import loopback_url
 
@@ -269,15 +271,90 @@ def _download_qwen(client: httpx.Client, url: str) -> bytes:
         return b''.join(chunks)
 
 
+def _qwen_small_inputs(images: list[bytes], mask: bytes | None):
+    """Explicit 8GB trial profile for the installed Qwen Image service only."""
+    if not 1 <= len(images) <= 2:
+        raise CloudError('本机千问研究版当前只验证了1至2张参考图；请减少参考图后重试。')
+    prepared, sizes, original = [], [], None
+    try:
+        for content in images:
+            if len(content) > MAX_RESULT_BYTES:
+                raise CloudError('本机参考图超过大小限制。')
+            with Image.open(io.BytesIO(content)) as opened:
+                if opened.width * opened.height > 32_000_000:
+                    raise CloudError('本机参考图像素过多，请先缩小图片。')
+                oriented = ImageOps.exif_transpose(opened)
+                source = oriented.convert('RGB')
+                preserved = oriented.convert('RGBA' if 'A' in oriented.getbands() else 'RGB')
+            if original is None:
+                original = preserved
+            ratio = min(1.0, 512 / max(source.size))
+            # Qwen Image 2.1's documented alignment is 32; keep a 64px floor.
+            size = tuple(max(64, min(512, round(side * ratio / 32) * 32)) for side in source.size)
+            resized = source.resize(size, Image.Resampling.LANCZOS)
+            buffer = io.BytesIO(); resized.save(buffer, format='PNG'); prepared.append(buffer.getvalue())
+            sizes.append({'original': list(source.size), 'processing': list(size)})
+        permission = None
+        if mask is not None:
+            with Image.open(io.BytesIO(mask)) as opened:
+                if opened.size != original.size:
+                    raise CloudError('本机蒙版尺寸必须与第一张参考图一致，未提交生成。')
+                # Application/OpenAI convention: transparent pixels may change.
+                permission = ImageOps.invert(opened.getchannel('A')) if 'A' in opened.getbands() else opened.convert('L')
+            if permission.getbbox() is None:
+                raise CloudError('蒙版没有允许修改的区域，未提交本机生成。')
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
+        raise CloudError('本机参考图或蒙版无法读取，请使用有效PNG/JPEG图片。') from exc
+    metadata = {'processingSize': sizes[0]['processing'], 'originalSize': sizes[0]['original'],
+                'referenceSizes': sizes, 'resizeApproximation': any(row['original'] != row['processing'] for row in sizes),
+                'maskStrategy': 'local_post_composite' if permission is not None else 'none',
+                'serverMask': False, 'researchOnly': True, 'imageEditingVerified': True,
+                'license': 'Qwen RESEARCH LICENSE AGREEMENT'}
+    return prepared, original, permission, metadata
+
+
+def _qwen_small_output(content: bytes, original: Image.Image, permission: Image.Image | None, metadata: dict) -> bytes:
+    try:
+        with Image.open(io.BytesIO(content)) as opened:
+            if list(opened.size) != metadata['processingSize']:
+                raise CloudError('本机生图返回了非约定尺寸，未将结果应用到原图。')
+            generated = opened.convert(original.mode)
+        generated = generated.resize(original.size, Image.Resampling.LANCZOS)
+        if permission is not None:
+            # Hard protection is enforced at original resolution; no claim that
+            # the model itself honored OpenAI alpha-mask semantics.
+            generated = Image.composite(generated, original, permission)
+        buffer = io.BytesIO(); generated.save(buffer, format='PNG'); return buffer.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
+        raise CloudError('本机生图结果无法读取，原图保持不变。') from exc
+
+
 def edit(images: list[bytes], prompt: str, mask: bytes | None, settings: dict, key: str) -> tuple[bytes, dict]:
     provider = settings['provider']
+    local_metadata = {}
+    original = permission = None
     try:
         with cloud_client() as client:
             if provider in OPENAI_IMAGE_PROVIDERS:
                 base_url = loopback_url(settings.get('baseUrl', '')) if provider == 'local_openai' else validate_base_url(settings.get('baseUrl', '')) if provider == 'openai_compatible' else 'https://api.openai.com/v1'
                 service = urlparse(base_url).hostname or '所选服务'
+                small_qwen = provider == 'local_openai' and base_url == 'http://127.0.0.1:8190/v1' and settings['model'] == 'sd-cpp-local'
+                if small_qwen:
+                    if '<sd_cpp_extra_args>' in prompt:
+                        raise CloudError('本机小图模式不接受额外运行参数，请只填写图像修改要求。')
+                    capabilities_response = client.get('http://127.0.0.1:8190/sdcpp/v1/capabilities')
+                    if capabilities_response.status_code != 200 or len(capabilities_response.content) > 262144:
+                        raise CloudError('本机千问生图尚未就绪，请先启动并等待模型加载。')
+                    try:
+                        identity = capabilities_response.json().get('model', {})
+                        actual = identity.get('name', '') or identity.get('stem', '')
+                    except (ValueError, AttributeError):
+                        raise CloudError('本机生图服务返回了无效模型信息。') from None
+                    if 'qwen_image_2.1-Q4_K' not in actual:
+                        raise CloudError('8190服务不是已验证的千问生图组件，未提交图片。')
+                    images, original, permission, local_metadata = _qwen_small_inputs(images, mask)
                 files = [('image[]', (f'image-{index + 1}.png', data, 'image/png')) for index, data in enumerate(images)]
-                if mask is not None:
+                if mask is not None and not small_qwen:
                     files.append(('mask', ('mask.png', mask, 'image/png')))
                 fields = {'model': settings['model'], 'prompt': prompt, 'n': '1', 'output_format': 'png'}
                 # Local image servers such as stable-diffusion.cpp don't accept
@@ -285,6 +362,8 @@ def edit(images: list[bytes], prompt: str, mask: bytes | None, settings: dict, k
                 # keeps the decoded first-image geometry under that protocol.
                 if provider != 'local_openai':
                     fields.update(quality=settings['quality'], size='auto')
+                elif small_qwen:
+                    fields['size'] = 'x'.join(map(str, local_metadata['processingSize']))
                 response = client.post(base_url + '/images/edits',
                     headers={'Authorization': 'Bearer ' + key} if key else {}, files=files, data=fields)
                 body = _check_response(response, service)
@@ -318,10 +397,17 @@ def edit(images: list[bytes], prompt: str, mask: bytes | None, settings: dict, k
                 metadata['baseUrl'] = base_url
             if provider == 'local_openai':
                 metadata.update(localOnly=True, billing='local_runtime', imageEditingVerified=False)
+            if local_metadata:
+                data = _qwen_small_output(data, original, permission, local_metadata)
+                metadata.update(local_metadata)
             return data, metadata
     except httpx.TimeoutException:
+        if provider == 'local_openai':
+            raise CloudError('本机图像处理超时；平台未自动重试，请检查本机模型状态后再生成。') from None
         raise CloudError('接口请求超时，可能已计费；平台未自动重试。请先检查服务商控制台再决定是否重新生成。') from None
     except httpx.HTTPError:
+        if provider == 'local_openai':
+            raise CloudError('本机图像服务连接中断；原图保留，请检查本机模型状态。') from None
         raise CloudError('接口连接中断，可能已受理；平台未自动重试。请先检查服务商控制台。') from None
 
 

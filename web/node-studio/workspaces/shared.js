@@ -34,14 +34,15 @@ export function currentOutput(context, result) {
 export function createWorkspace(container, context, options = {}) {
   const lifetime = new AbortController(), params = structuredClone(context.node.params || {}), cleanups = [];
   let disposed = false;
-  const root = el('article', { class: 'ns-node-workspace', dataset: { workspace: context.node.type } });
+  const root = el('article', { class: 'ns-node-workspace', dataset: { workspace: context.node.type }, 'aria-label': context.definition?.label || options.title || '节点工作区' });
   const intro = el('div', { class: 'ns-ws-intro' },
-    el('h2', { text: options.title || context.definition?.label || context.definition?.name || '工作区' }),
     el('p', { class: 'ns-ws-description', text: options.description || context.definition?.description || '' }));
   const body = el('div', { class: 'ns-ws-body' });
   const status = el('p', { class: 'ns-ws-status', role: 'status', 'aria-live': 'polite' });
   const output = el('section', { class: 'ns-ws-output', 'aria-label': '当前输出' });
-  root.append(intro, body, status, output); container.replaceChildren(root); container.scrollTop = 0;
+  const outputDetails = el('details', { class: 'ns-ws-saved-output', hidden: true },
+    el('summary', { text: '查看已保存的输出' }), output);
+  root.append(intro, body, status, outputDetails); container.replaceChildren(root); container.scrollTop = 0;
 
   function on(target, event, handler, opts = {}) { target.addEventListener(event, handler, { ...opts, signal: lifetime.signal }); }
   function patch(change) { if (disposed) return; Object.assign(params, change); context.updateNode(change); }
@@ -57,8 +58,7 @@ export function createWorkspace(container, context, options = {}) {
     on(button, 'click', () => busy(button, action)); return button;
   }
   function showOutput(value = context.node.output) {
-    output.replaceChildren(); if (!value) return;
-    output.append(el('h3', { text: '这一步的输出' }));
+    output.replaceChildren(); outputDetails.hidden = !value; if (!value) return;
     const url = assetURL(value);
     if (url) output.append(el('img', { src: url, alt: '当前节点输出预览', class: 'ns-ws-result-image' }));
     if (value.report) renderReport(output, value.report);
@@ -76,7 +76,7 @@ export function createWorkspace(container, context, options = {}) {
   async function run(opts = {}) {
     context.updateNode({ ...params });
     say('正在处理这一步…'); const result = await context.runNode(opts);
-    if (!lifetime.signal.aborted) { showOutput(currentOutput(context, result)); say(result?.message || '已完成，可返回总览继续连接下一步。'); }
+    if (!lifetime.signal.aborted) { showOutput(currentOutput(context, result)); outputDetails.open = true; say(result?.message || '已完成，可返回总览继续连接下一步。'); }
     return result;
   }
   async function commit(value) { await context.commitOutput(value); showOutput(value); say('已保存为这一步的新输出。'); }
@@ -92,7 +92,7 @@ export function createWorkspace(container, context, options = {}) {
     if (context.signal.aborted) destroy();
     else context.signal.addEventListener('abort', destroy, { once: true, signal: lifetime.signal });
   }
-  return { root, body, params, output, on, patch, save, say, button, run, commit, preview, showOutput,
+  return { root, body, params, output, outputDetails, on, patch, save, say, button, run, commit, preview, showOutput,
     signal: lifetime.signal, cleanup: fn => disposed ? fn() : cleanups.push(fn), destroy };
 }
 

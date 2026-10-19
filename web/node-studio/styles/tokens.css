@@ -1,12 +1,13 @@
 :root {
-  --ns-paper:#f9faf8; --ns-canvas:#e9edeb; --ns-surface:#ffffff; --ns-ink:#263f49;
-  --ns-muted:#5e7176; --ns-line:#cbd5d2; --ns-accent:#315967; --ns-accent-soft:#dce7e7;
-  --ns-creation:#7e4d51; --ns-creation-soft:#e8dada; --ns-ai:#4f6979; --ns-ai-soft:#dce6ed;
-  --ns-input:#697a70; --ns-input-soft:#dfe6df; --ns-setting:#686e50; --ns-setting-soft:#e3e6d7;
-  --ns-structure:#756d87; --ns-structure-soft:#e7e1ec; --ns-production:#705e48; --ns-production-soft:#eae2d6;
-  --ns-success:#3d6754; --ns-warning:#8c6132; --ns-danger:#93474b;
+  --ns-paper:#f9faf6; --ns-canvas:#eef0ec; --ns-surface:#ffffff; --ns-ink:#303633;
+  --ns-muted:#626b66; --ns-line:#d5dad3; --ns-accent:#9b3b32; --ns-accent-soft:#f0e3df;
+  --ns-creation:#a23c31; --ns-creation-soft:#eedfd8; --ns-ai:#536e7a; --ns-ai-soft:#e0e8e9;
+  --ns-input:#516c78; --ns-input-soft:#dfe7e7; --ns-setting:#d3cfbb; --ns-setting-soft:#eeece1;
+  --ns-structure:#d4d9d1; --ns-structure-soft:#e9ece5; --ns-production:#83764f; --ns-production-soft:#ece7d7;
+  --ns-success:#3d6754; --ns-warning:#815820; --ns-danger:#a03332;
   --ns-font:'Segoe UI Variable Text','Microsoft YaHei UI','Microsoft YaHei',sans-serif;
-  --ns-radius:10px; --ns-shadow:0 12px 36px #263f4910;
+  --ns-radius:4px; --ns-shadow:0 12px 36px #3036330b;
+  --ns-header-height:72px; --ns-focus:#2a5c76; --ns-ease:cubic-bezier(.2,.7,.2,1);
 }
 * {box-sizing:border-box} [hidden] {display:none!important}
 body {margin:0;background:var(--ns-canvas);color:var(--ns-ink);font:14px/1.6 var(--ns-font)}

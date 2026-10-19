@@ -1,16 +1,20 @@
 # 遗迹重构：节点创作台架构
 
-本轮版本 0.8.1。原有 19 个节点保留，新增“AI 识别与检索”，当前能力目录为 20 个。节点内实现可以逐步替换。桌面窗口和本机 FastAPI 后端继续使用，新增代码不依赖云端网页托管。
+当前版本 0.10.0，共 23 个节点。使用 Windows 桌面壳、本机 FastAPI 服务和模块化浏览器工作区；无需云端网页托管。六个创作节点继续保留，分支与合拢管理多方案，服装展平与效果映射分为独立节点。
 
 ## 目录与责任
 
 | 目录 | 责任 |
 | --- | --- |
-| `node_studio/catalog.py` | 20 个节点的名称、接口、位置、实现状态的单一登记 |
+| `node_studio/catalog.py` | 23 个节点的名称、接口、位置、实现状态的单一登记 |
 | `node_studio/store.py` | 本机工作流持久化、结构验证、乐观锁与原子写入 |
 | `node_studio/routes.py` | 显式运行、结果保存及功能入口 |
 | `node_studio/adapters.py` | 现有图像、绘图、映射等能力的后端适配 |
 | `node_studio/character_research.py` | 角色候选、缩略图授权、公开资料检索与来源边界 |
+| `node_studio/assistant_engine.py` | 宿主上下文、视觉请求、工具白名单、候选、采用和恢复 |
+| `node_studio/garment_tools.py` / `garment_jobs.py` | 分割/展平算法适配、异步任务快照、来源校验与部件输出 |
+| `node_studio/blend_tools.py` | 可编辑痕迹的比例混合、共同笔触去重、特征选择 |
+| `local_ai_runtime.py` / `local_image_runtime.py` | 独立本机模型包、固定回环服务、受控启动和停止 |
 | `node_studio/proximity.py` | 仅本机内存中的可选靠近感知会话 |
 | `web/node-studio/core/` | 与视觉无关的图操作、版本与保存队列 |
 | `web/node-studio/components/` | 标签主线、插槽、节点库和预览 |
@@ -21,11 +25,11 @@
 | `tools/qa_node_studio*` | 真实浏览器集成验证 |
 | `docs/` | 实现说明、研究取舍和后续扩展说明 |
 
-现有 `brush_workflow.py`、`garment_mapping.py`、`surface_workflow.py` 是已验证算法能力。它们在旧画布 `/legacy` 下保持原有生命周期，经隔离适配接入精修、分件和映射节点；新增功能应进入节点模块，避免继续扩大旧全局脚本。后续逐个将旧画布内部模块迁移出来，宿主工作流接口保持稳定。
+现有 `brush_workflow.py`、`garment_mapping.py`、`surface_workflow.py` 经 `/legacy` 隔离画布接入精修和映射。分割、展平、协作、融合、手势与三维命中均有独立工作区；宿主 context 负责版本保存和页面生命周期。
 
 ## 关键数据
 
-工作流包含 `schemaVersion / id / revision / title / nodes / order / stash / assets / context`。每个节点保存 `type / params / attachments / status / output`；节点旧输出进入 `versions`。横向顺序与侧插引用分开，禁止重复归属、悬空引用和循环挂载。
+工作流包含 `schemaVersion / id / revision / title / nodes / order / branches / stash / assets / context`。每个节点保存 `type / params / attachments / status / output`；节点旧输出进入 `versions`。主线、独立分支与侧插引用分开，禁止重复归属、悬空引用和循环挂载。合拢输出 `candidate_set`，融合显式选择两至三个已采用结果。
 
 服装方案输出保留 `imageUrl`、真实服装来源、项目记录、独立笔触、保护区、表面分析和映射信息。仅有一张 AI 合成图片时，不伪称仍有完整可编辑痕迹；制作前需重新确认对应和尺寸。生成任务与实际图像结果分别记录。
 
@@ -50,4 +54,14 @@
 3. 实现或复用一个后端适配；运行结果有明确的产物类型和来源。
 4. 覆盖该能力的真实输入输出和失败路径；升级 capability 后再显示可用。
 
-手势和战斗模拟保留完整入口，鼠标实验和简化事件记录不等于摄像头力学测量或任意服装 3D 映射。模型权重、私人照片和运行工作区不进入公开源代码包。
+## 协作执行与本机工具
+
+宿主节点与上游输出形成一次任务上下文。模型返回受限工具调用，后端验证名称、参数、坐标、保护范围与节点类型。预览存为独立候选，采用时校验源图和项目版本，生成工作流 patch；恢复同样检查当前作品是否已被再次修改。衣片坐标变化的操作与原坐标笔触编辑分开，不把旧笔触继续套到新衣片。
+
+服装任务使用独立后台队列，冻结实际输入图和 sourceBinding。可编辑预览从干净 reference 重绘一次；栅格底图直接使用当前图。输出包含全尺寸透明图、裁切图、mask 和部件尺寸。采用只更新指定节点，源图变化时拒绝旧结果。
+
+## 实验交互与模型分离
+
+MediaPipe 从本机资产加载，只有显式开启时使用摄像头。动作强度属于创作参数。三维工作台使用 Three.js 代理衣服，射线扫掠返回最近衣物表面的部件、位置、法向与 UV；保存命中事件和贴图，未配准照片时不写入虚假的二维痕迹。
+
+视觉助手、图像生成、分割与深度由不同适配器负责。大权重位于独立模型包，桌面只保存路径配置；研究许可模型不进入主发行包。图像、照片、密钥与运行工作区不进入源码发行包。手势小模型和必要浏览器资产连同来源说明随软件提供。具体能力及限制见 `V010.md` 与 `LOCAL_MODELS.md`。
