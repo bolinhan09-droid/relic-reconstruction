@@ -16,16 +16,33 @@ export async function garmentInput(container, context) {
 }
 
 export async function imageReference(container, context) {
-  const ws = createWorkspace(container, context, { title: '收集这次创作的参考', description: '可以放立绘、喜欢的痕迹、材质细节。参考不会替换真实服装。', kicker: 'REFERENCE COLLECTION' });
+  const ws = createWorkspace(container, context, { title: '图片参考', description: '一张参考卡可收集多张图片。选择当前输入后，可以连接创作步骤，也能把卡放到画布上独立开始。实物制作仍需真实服装照片和尺寸。', kicker: 'REFERENCE COLLECTION' });
   const gallery = el('div', { class: 'ns-ws-reference-grid' });
   const refresh = () => { gallery.replaceChildren(); (ws.params.references || []).forEach((asset, index) => {
-    const card = el('figure', { class: 'ns-ws-reference-card' }, el('img', { src: assetURL(asset), alt: asset.name || `参考 ${index + 1}` }), el('figcaption', { text: asset.name || `参考 ${index + 1}` }));
-    card.append(ws.button('移除', async () => { ws.patch({ references: ws.params.references.filter((_, i) => i !== index) }); await ws.save(); refresh(); })); gallery.append(card);
+    const active = index === (ws.params.activeReferenceIndex || 0);
+    const card = el('figure', { class: `ns-ws-reference-card ${active ? 'is-input' : ''}` }, el('img', { src: assetURL(asset), alt: asset.name || `参考 ${index + 1}` }), el('figcaption', { text: asset.name || `参考 ${index + 1}` }));
+    const use = ws.button(active ? '当前输入' : '用作输入', async () => {
+      ws.patch({ activeReferenceIndex: index }); await ws.run(); ws.outputDetails.open = false; refresh();
+    }, { disabled: active });
+    const start = context.startReferenceRoute ? ws.button('从这张图开始', async () => {
+      ws.patch({ activeReferenceIndex: index }); await ws.run(); await context.startReferenceRoute(context.node.id, index);
+    }) : null;
+    const remove = ws.button('移除', async () => {
+      const references = ws.params.references.filter((_, i) => i !== index);
+      const previous = ws.params.activeReferenceIndex || 0;
+      const activeReferenceIndex = Math.min(Math.max(0, previous - (index < previous ? 1 : 0)), Math.max(0, references.length - 1));
+      ws.patch({ references, activeReferenceIndex }); await ws.run(); ws.outputDetails.open = false; refresh();
+    });
+    card.append(actions(use, start, remove)); gallery.append(card);
   }); };
-  const role = field(ws, 'referenceRole', '这组参考主要用来参考什么', { options: [{ value: 'appearance', label: '整体外观' }, { value: 'damage', label: '血迹／磨损／破损' }, { value: 'character', label: '角色二维设定' }, { value: 'material', label: '材料效果' }], value: ws.params.referenceRole || 'appearance' });
-  const description = field(ws, 'notes', '想参考的地方', { type: 'textarea', placeholder: '例如：参考第一张的血迹分布，保留我的服装结构。' });
-  const concept = field(ws, 'conceptPrompt', '二维参考生成描述 · 可选', { type: 'textarea', placeholder: '希望先探索动漫版效果，可以在这里准备任务，再连接图像生成节点。' });
-  ws.body.append(uploadControl(ws, context, '添加参考图片', async asset => { ws.patch({ references: [...(ws.params.references || []), asset] }); await ws.save(); refresh(); }, { multiple: true }), gallery, role.group, description.group, concept.group,
+  const role = field(ws, 'referenceRole', '参考用途', { options: [{ value: 'appearance', label: '整体外观' }, { value: 'damage', label: '血迹／磨损／破损' }, { value: 'character', label: '角色二维设定' }, { value: 'material', label: '材料效果' }], value: ws.params.referenceRole || 'appearance' });
+  const description = field(ws, 'notes', '想参考的地方', { type: 'textarea', placeholder: '例如：参考血迹分布，保留服装结构' });
+  const concept = field(ws, 'conceptPrompt', '二维参考描述', { type: 'textarea', placeholder: '想先生成的动漫版效果' });
+  const details = el('details', { class: 'ns-ws-details' }, el('summary', { text: '参考用途与备注' }), role.group, description.group, concept.group);
+  ws.body.append(uploadControl(ws, context, '添加参考图片', async asset => {
+    ws.patch({ references: [...(ws.params.references || []), asset], activeReferenceIndex: ws.params.activeReferenceIndex || 0 });
+    await ws.run(); ws.outputDetails.open = false; refresh();
+  }, { multiple: true }), gallery, details,
     actions(ws.button('保存参考', () => ws.run(), { primary: true })));
   refresh(); return ws;
 }

@@ -1,0 +1,177 @@
+/* The v0.10 cover composition, with the current workflows and onboarding intact.
+   Keep every selector inside the entry screen so workbenches remain unchanged. */
+.ns-entry {
+  display:grid;
+  grid-template-columns:minmax(250px,330px) minmax(420px,750px);
+  grid-template-rows:auto auto auto auto auto minmax(170px,1fr);
+  justify-content:center;
+  align-content:start;
+  gap:12px clamp(28px,5vw,72px);
+  padding:clamp(24px,5vh,45px) clamp(28px,4.5vw,72px) 28px;
+  overflow:hidden;
+}
+.ns-entry .ns-entry-heading {
+  grid-column:1;
+  grid-row:1;
+  align-self:center;
+  padding:12px 0 0;
+  margin:0;
+  max-width:none;
+}
+.ns-entry .ns-entry-heading h1 {
+  display:block;
+  max-width:330px;
+  font-size:clamp(34px,3.15vw,45px);
+  line-height:1.38;
+  font-weight:650;
+  letter-spacing:.025em;
+  margin:16px 0 14px;
+}
+.ns-entry .ns-entry-heading h1 > span { display:block; }
+.ns-entry .ns-entry-heading p { max-width:310px; margin:0; line-height:1.8; }
+.ns-entry .ns-upload-stage {
+  grid-column:2;
+  grid-row:1/6;
+  display:flex;
+  flex-direction:column;
+  align-self:start;
+  height:auto;
+  min-height:0;
+  min-width:0;
+  max-width:none;
+  margin:0;
+  gap:16px;
+}
+.ns-entry .ns-upload-front {
+  width:100%;
+  height:clamp(240px,calc(40vh - 40px),322px);
+  min-height:0;
+  flex:none;
+  padding:32px 58px 32px 64px;
+  gap:18px;
+}
+.ns-entry .ns-front-preview { flex:0 1 47%; width:47%; min-height:0; height:100%; }
+.ns-entry .ns-front-preview svg { height:100%; max-height:220px; }
+.ns-entry .ns-upload-caption strong { font-size:20px; line-height:1.65; }
+.ns-entry .ns-upload-caption small { max-width:180px; font-size:12px; line-height:1.7; }
+.ns-entry .ns-upload-front.has-upload .ns-front-preview { flex-basis:56%; width:56%; }
+.ns-entry .ns-upload-front.has-upload .ns-upload-caption strong { font-size:15px; }
+.ns-entry .ns-upload-side {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:start;
+  gap:16px;
+  padding:0 8px;
+}
+.ns-entry .ns-start-options { gap:10px; }
+.ns-entry .ns-start-options legend { margin-bottom:6px; }
+.ns-entry .ns-start-options label { min-height:74px; padding:11px 12px; gap:8px; }
+.ns-entry .ns-start-options strong { font-size:13px; }
+.ns-entry .ns-start-options small { margin-top:4px; font-size:11px; line-height:1.5; }
+.ns-entry .ns-back-upload { margin-top:24px; padding-left:0; gap:9px; min-height:54px; font-size:12px; }
+.ns-entry .ns-back-upload > span:first-of-type { width:40px; height:48px; }
+.ns-entry .ns-entry-actions {
+  grid-column:1;
+  grid-row:2;
+  align-self:start;
+  margin:0;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.ns-entry .ns-start { min-width:160px; min-height:44px; padding-inline:18px; }
+.ns-entry #sampleButton { padding-inline:8px; }
+.ns-entry #onboardingOffer {
+  grid-column:1;
+  grid-row:3;
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
+  padding:11px 12px;
+  margin:0;
+  min-width:0;
+}
+.ns-entry #onboardingOffer > div { flex:1 0 100%; min-width:0; }
+.ns-entry #onboardingOffer p { display:none; }
+.ns-entry #onboardingOffer .ns-button { min-height:36px; padding:7px 10px; font-size:12px; }
+.ns-entry .ns-entry-foot { grid-column:1; grid-row:4; margin:0; max-width:none; }
+.ns-entry .ns-entry-status { grid-column:1; grid-row:5; margin:0; min-height:0; }
+.ns-entry .ns-entry-history {
+  grid-column:1/-1;
+  grid-row:6;
+  align-self:stretch;
+  display:flex;
+  flex-direction:column;
+  width:100%;
+  max-width:none;
+  min-width:0;
+  min-height:0;
+  margin:8px 0 0;
+  padding:19px 0 0;
+  border-left:0;
+  border-top:1px solid var(--ns-line);
+}
+.ns-entry .ns-history-heading { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; margin-bottom:12px; flex:none; }
+.ns-entry .ns-history-heading h2 { font-size:18px; }
+.ns-entry .ns-history-heading > button { margin-left:auto; }
+.ns-entry .ns-history-list {
+  display:flex;
+  flex-direction:row;
+  align-items:flex-start;
+  flex:none;
+  min-height:0;
+  gap:16px;
+  padding:3px 3px 10px;
+  overflow-x:auto;
+  overflow-y:hidden;
+  scrollbar-gutter:auto;
+}
+.ns-entry .ns-history-item { width:230px; flex:0 0 230px; }
+.ns-entry .ns-history-item .ns-history-card { width:100%; }
+.ns-entry .ns-history-picture { height:110px; }
+.ns-entry .ns-history-details { padding:10px 13px; }
+.ns-entry .ns-history-empty { flex:1; min-height:120px; }
+
+@media (min-width:960px) and (max-height:760px) {
+  .ns-entry { gap:8px 28px; padding:22px 32px 20px; }
+  .ns-entry .ns-entry-heading { padding-top:0; }
+  .ns-entry .ns-entry-heading h1 { font-size:34px; line-height:1.32; margin:11px 0; }
+  .ns-entry .ns-upload-stage { gap:12px; }
+  .ns-entry .ns-upload-front { padding:24px 52px 24px 56px; }
+  .ns-entry .ns-upload-caption strong { font-size:18px; }
+  .ns-entry .ns-upload-side { padding-inline:4px; gap:12px; }
+  .ns-entry .ns-start-options label { min-height:72px; padding:9px 10px; }
+  .ns-entry #onboardingOffer { padding:8px 10px; gap:6px; }
+  .ns-entry .ns-entry-history { margin-top:5px; padding-top:12px; }
+  .ns-entry .ns-history-heading { margin-bottom:8px; }
+  .ns-entry .ns-history-picture { height:88px; }
+  .ns-entry .ns-history-item { width:210px; flex-basis:210px; }
+}
+
+/* Smaller windows retain access to every control instead of clipping the cover. */
+@media (max-width:959px), (max-height:639px) {
+  .ns-entry { display:block; overflow:auto; padding:28px 24px; }
+  .ns-entry .ns-entry-heading,
+  .ns-entry .ns-upload-stage,
+  .ns-entry .ns-entry-actions,
+  .ns-entry #onboardingOffer,
+  .ns-entry .ns-entry-foot,
+  .ns-entry .ns-entry-status,
+  .ns-entry .ns-entry-history { max-width:680px; margin-inline:auto; }
+  .ns-entry .ns-entry-heading { padding-top:0; margin-bottom:22px; }
+  .ns-entry .ns-entry-heading h1 { display:flex; flex-wrap:wrap; gap:0 .3em; max-width:none; font-size:34px; }
+  .ns-entry .ns-upload-front { height:280px; }
+  .ns-entry .ns-entry-actions { margin-block:20px 12px; }
+  .ns-entry #onboardingOffer > div { flex:1; }
+  .ns-entry .ns-entry-foot { margin-block:10px 0; }
+  .ns-entry .ns-entry-history { margin-top:24px; }
+}
+@media (max-width:560px) {
+  .ns-entry { padding:22px 16px; }
+  .ns-entry .ns-entry-heading h1 { font-size:30px; }
+  .ns-entry .ns-upload-front { height:250px; padding:26px 42px 26px 48px; gap:10px; }
+  .ns-entry .ns-upload-caption strong { font-size:17px; }
+  .ns-entry .ns-upload-side { grid-template-columns:1fr; }
+  .ns-entry .ns-back-upload { margin-top:0; }
+  .ns-entry #onboardingOffer > div { flex-basis:100%; }
+}

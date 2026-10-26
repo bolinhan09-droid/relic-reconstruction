@@ -1,0 +1,37 @@
+遗迹重构 v0.11.7 · Windows 公开体验版
+
+1. 把 ZIP 整个解压到可写文件夹，双击 RelicReconstruction.exe
+   不要在压缩包里直接运行，也不要单独拖出 EXE
+   不用安装 Python、Node.js 或大模型
+
+2. 第一次先点“跟着示例做一遍”
+   使用示例服装练习绘制、保存与节点输出，不需要 API
+   也可以上传自己的衣服，选择标准流程开始
+
+3. 需要 AI 时，点左上角“AI 设置”
+   “协作助手”用于讨论、看图和建议
+   “图像服务”用于生成或修改图片
+   首页和“帮助”里的“API 怎么填”有简短引导
+   每位使用者填自己的密钥；所有节点共用全局配置
+   手动输入的密钥仅在本次运行有效，重启后需重新填写
+   点击生成才会调用图像接口；打开软件和接入节点不会自动生图
+
+4. 千问 API 在阿里云百炼开通
+   官方控制台：https://bailian.console.aliyun.com/
+   开通说明：https://help.aliyun.com/zh/model-studio/first-api-call-to-qwen
+   创建 API Key，在业务空间管理查工作空间 ID
+   回到图像服务选“千问”，填密钥和工作空间，核对地域一致
+   API 按实际使用计费，额度与价格以自己的百炼控制台为准
+
+5. 作品保存在本机
+   直接解压运行时，默认保存到软件旁的 workspace 文件夹
+   更新前关闭软件，保留并备份 workspace
+   本包不含作者照片、作品、账号或大型模型
+   可选模型下载链接见 LOCAL_MODELS.md
+
+系统：Windows 10/11 x64，需 Microsoft Edge WebView2 Runtime
+若提示缺少运行时，从微软安装：https://developer.microsoft.com/microsoft-edge/webview2/
+
+下载和反馈：https://github.com/bolinhan09-droid/relic-reconstruction
+反馈时请附版本号、操作步骤和错误信息；截图遮住密钥与私人照片
+这是课程原型公开体验版，制作前仍需核对实测尺寸并做材料小样

@@ -1,12 +1,13 @@
 import {findNode,definitionFor,getLanes} from '../core/model.js';
 import {escape,icon,nodeIcon} from './icons.js';
 import {preview,nodeStyle,statusLabel,bindNodeDrag,readDrop,finishNodeDrag} from './ribbon.js';
+import {intentText} from '../core/text-input.js';
 
 const TAG={w:340,h:220,step:318},JUNCTION={w:110,h:100},ROW=318;
 const isJunction=n=>['branch_create','branch_merge'].includes(n?.type);
 
-/** A structured graph keeps every branch a readable horizontal sequence.
- * Layout is derived from data; screen coordinates never change dependencies. */
+/** Connected steps retain a readable ribbon. Independent routes have explicit
+ * canvas positions; dragging a card onto empty space does not create an edge. */
 export function graphLayout(workflow){
   const lanes=getLanes(workflow),byFork=new Map();
   for(const lane of lanes)if(lane.forkId){const list=byFork.get(lane.forkId)||[];list.push(lane);byFork.set(lane.forkId,list);}
@@ -53,7 +54,18 @@ export function graphLayout(workflow){
     return{first,last:prev};
   }
   place(main,tree,64,tree.height/2+50);
-  return{nodes,edges,bands,ends,width:Math.max(tree.width+180,900),height:Math.max(tree.height+100,440)};
+  const roots=[];
+  let bottom=tree.height+100;
+  for(const lane of lanes.filter(l=>l.id!=='main'&&!l.forkId)){
+    if(!lane.order.length)continue;
+    const info=measure(lane),x=Math.max(24,Number(lane.x)||64),top=Math.max(56,Number.isFinite(Number(lane.y))?Number(lane.y):bottom+60);
+    const y=top+info.height/2-(ROW-TAG.h)/2;
+    roots.push({id:lane.id,label:lane.label||'独立路线',x,y:top-42,width:info.width,standalone:lane.order.length===1});
+    place(lane,info,x,y);
+    bottom=Math.max(bottom,top+info.height+45);
+  }
+  const width=Math.max(tree.width+180,...nodes.map(n=>n.x+n.w+170),900);
+  return{nodes,edges,bands,ends,roots,width,height:Math.max(bottom+140,...nodes.map(n=>n.y+n.h+180),540)};
 }
 
 const junctionIcon=type=>type==='branch_create'?'<path d="M5 12h5m0 0V5h9m-9 7v7h9M16 2l3 3-3 3m0 8 3 3-3 3"/>':'<path d="M4 5h6v7m-6 7h6v-7m0 0h10m-3-3 3 3-3 3"/>';
@@ -62,15 +74,16 @@ function curve(edge){const a=edge.from,b=edge.to,mid=(a.x+b.x)/2;return `M${a.x}
 export function renderGraph(element,workflow,catalog,handlers){
   const layout=graphLayout(workflow),selected=workflow.selectedNodeId;
   element.classList.add('ns-graph');element.style.width=`${layout.width}px`;element.style.height=`${layout.height}px`;
-  const attachment=id=>{const n=findNode(workflow,id),d=n&&definitionFor(catalog,n.type);return d?`<button class="ns-attachment ${selected===id?'selected':''}" draggable="true" data-attachment="${escape(id)}" style="${nodeStyle(d)}" title="${escape(n.label)} · 双击进入">${icon(nodeIcon(n.type))}<span>${escape(n.label)}</span></button>`:'';};
-  element.innerHTML=layout.bands.map(b=>`<section class="ns-route-band ${workflow.selectedLaneId===b.laneId?'is-active':''}" style="left:${b.x}px;top:${b.y}px;width:${b.width}px;height:${b.height}px" data-route="${escape(b.laneId)}"><button class="ns-route-label" data-lane-select="${escape(b.laneId)}">${escape(b.label)}<span>独立探索</span></button></section>`).join('')+
+  const attachment=id=>{const n=findNode(workflow,id),d=n&&definitionFor(catalog,n.type),text=n?.output?.kind==='intent'?intentText(n.output):'';return d?`<button class="ns-attachment ${selected===id?'selected':''}" draggable="true" data-attachment="${escape(id)}" style="${nodeStyle(d)}" title="${escape(text?`${n.label} · 文字输出：${text.slice(0,180)}`:`${n.label} · 双击进入`)}">${icon(nodeIcon(n.type))}<span>${escape(n.label)}${text?' · 文字':''}</span></button>`:'';};
+  element.innerHTML=layout.bands.map(b=>`<section class="ns-route-band ${workflow.selectedLaneId===b.laneId?'is-active':''}" style="left:${b.x}px;top:${b.y}px;width:${b.width}px;height:${b.height}px" data-route="${escape(b.laneId)}"><button class="ns-route-label" data-lane-select="${escape(b.laneId)}">${escape(b.label)}</button></section>`).join('')+
+    layout.roots.map(r=>`<div class="ns-root-route ${workflow.selectedLaneId===r.id?'is-active':''}" style="left:${r.x+42}px;top:${r.y}px" data-route="${escape(r.id)}"><button class="ns-route-grip" data-route-drag="${escape(r.id)}" draggable="true" aria-label="移动整条路线：${escape(r.label)}" title="拖动整条路线">⠿</button><button class="ns-root-label" data-lane-select="${escape(r.id)}">${escape(r.label)}<span>${r.standalone?'独立节点':'独立路线'}</span></button></div>`).join('')+
     `<svg class="ns-graph-links" viewBox="0 0 ${layout.width} ${layout.height}" aria-hidden="true">${layout.edges.map(e=>`<path class="${e.kind}" d="${curve(e)}"/>`).join('')}</svg>`+
     layout.nodes.map(p=>{const n=findNode(workflow,p.id),d=definitionFor(catalog,n.type);if(!d)return'';
       const frame=`class="ns-node-wrap ${p.junction?'ns-junction-wrap':''} ${selected===n.id?'is-selected':''}" data-node-id="${escape(n.id)}" data-lane-id="${escape(p.laneId)}" data-index="${p.index}" style="left:${p.x}px;top:${p.y}px;width:${p.w}px;height:${p.h}px" role="listitem"`;
-      const gap=n.type==='garment_input'?'':`<span class="ns-insert-target" data-insert-at="${p.index}" data-lane="${escape(p.laneId)}" aria-hidden="true"><span>插入此处</span></span>`;
+      const gap=n.type==='garment_input'||(p.index===0&&n.type==='image_reference')?'':`<span class="ns-insert-target" data-insert-at="${p.index}" data-lane="${escape(p.laneId)}" aria-hidden="true"><span>插入此处</span></span>`;
       const head=`<span class="ns-node-head">${icon(nodeIcon(n.type))}<strong>${escape(n.label)}</strong></span>`;
       const face=p.junction?`<span class="ns-junction-symbol"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">${junctionIcon(n.type)}</svg></span><strong>${escape(n.label)}</strong><small>${n.type==='branch_create'?getLanes(workflow).filter(l=>l.forkId===n.id).length+' 条路线':'收集方案'}</small>`:`${head}${preview(n)}<span class="ns-node-status" data-status="${escape(n.status)}"><i class="ns-status-dot"></i>${statusLabel(n)}<span class="ns-node-open-hint">双击进入 ↗</span></span>`;
-      return `<div ${frame}>${gap}<div class="ns-slot ns-slot-top" data-host="${escape(n.id)}" data-slot="top">${(n.attachments?.top||[]).map(attachment).join('')}</div><button class="${p.junction?'ns-junction-card':'ns-node-card'}" style="${nodeStyle(d)}" data-node="${escape(n.id)}" draggable="${n.type!=='garment_input'&&!p.junction}" aria-pressed="${selected===n.id}" aria-label="${escape(n.label)}，双击进入工作区">${face}</button><div class="ns-slot ns-slot-bottom" data-host="${escape(n.id)}" data-slot="bottom">${(n.attachments?.bottom||[]).map(attachment).join('')}</div></div>`;
+      return `<div ${frame}>${gap}<div class="ns-slot ns-slot-top" data-host="${escape(n.id)}" data-slot="top">${(n.attachments?.top||[]).map(attachment).join('')}</div><button class="${p.junction?'ns-junction-card':'ns-node-card'}" style="${nodeStyle(d)}" data-node="${escape(n.id)}" draggable="${!(n.type==='garment_input'&&p.laneId==='main')&&!p.junction}" aria-pressed="${selected===n.id}" aria-label="${escape(n.label)}，双击进入工作区">${face}</button><div class="ns-slot ns-slot-bottom" data-host="${escape(n.id)}" data-slot="bottom">${(n.attachments?.bottom||[]).map(attachment).join('')}</div></div>`;
     }).join('')+
     layout.ends.map(e=>`<div class="ns-graph-end" data-insert-at="${e.at}" data-lane="${escape(e.laneId)}" style="left:${e.x}px;top:${e.y-28}px"><button data-lane-add="${escape(e.laneId)}" aria-label="${escape(e.label)}">${icon('plus')}</button><small>${escape(e.label)}</small></div>`).join('');
   element.querySelectorAll('[data-node],[data-attachment]').forEach(button=>{
@@ -80,6 +93,7 @@ export function renderGraph(element,workflow,catalog,handlers){
     if(button.draggable)bindNodeDrag(button,{kind:'move',id});
   });
   element.querySelectorAll('[data-lane-select],[data-lane-add]').forEach(b=>b.onclick=e=>{e.stopPropagation();handlers.selectLane(b.dataset.laneSelect||b.dataset.laneAdd,!!b.dataset.laneAdd);});
+  element.querySelectorAll('[data-route-drag]').forEach(b=>bindNodeDrag(b,{kind:'route',id:b.dataset.routeDrag}));
   const dropAt=(event,laneId,at)=>{const data=readDrop(event),d=data&&definitionFor(catalog,data.type||findNode(workflow,data.id)?.type);if(!d||d.placement==='attachment')return;event.preventDefault();event.stopPropagation();handlers.drop(data,{laneId,at});finishNodeDrag();};
   const over=(event,target)=>{const data=readDrop(event),d=data&&definitionFor(catalog,data.type||findNode(workflow,data.id)?.type);if(!d||d.placement==='attachment')return;event.preventDefault();event.stopPropagation();event.dataTransfer.dropEffect=data.kind==='insert'?'copy':'move';element.querySelectorAll('.is-insert-active').forEach(t=>t.classList.remove('is-insert-active'));target.classList.add('is-insert-active');};
   element.querySelectorAll('[data-insert-at]').forEach(t=>{t.ondragover=e=>over(e,t);t.ondragleave=()=>t.classList.remove('is-insert-active');t.ondrop=e=>dropAt(e,t.dataset.lane,Number(t.dataset.insertAt));});
@@ -90,7 +104,7 @@ export function renderGraph(element,workflow,catalog,handlers){
     w.ondrop=e=>{if(e.target.closest('.ns-slot,[data-insert-at]'))return;dropAt(e,w.dataset.laneId,position(e));};
   });
   element.querySelectorAll('.ns-slot').forEach(slot=>{
-    const compatible=e=>{const data=readDrop(e),d=data&&definitionFor(catalog,data.type||findNode(workflow,data.id)?.type);return d&&d.placement!=='main'&&d.slot===slot.dataset.slot;};
+    const compatible=e=>{const data=readDrop(e),d=data?.kind!=='route'&&data&&definitionFor(catalog,data.type||findNode(workflow,data.id)?.type);return d&&d.placement!=='main'&&d.slot===slot.dataset.slot;};
     slot.ondragover=e=>{e.stopPropagation();if(!compatible(e))return;e.preventDefault();slot.classList.add('drop-active');};
     slot.ondragleave=()=>slot.classList.remove('drop-active');
     slot.ondrop=e=>{e.stopPropagation();if(!compatible(e))return;e.preventDefault();handlers.drop(readDrop(e),{hostId:slot.dataset.host,slot:slot.dataset.slot});finishNodeDrag();};
@@ -109,5 +123,8 @@ export function createGraphViewport(viewport,element,{onChange=()=>{}}={}){
   viewport.addEventListener('pointerdown',e=>{if(e.button!==1&&(e.button!==0||e.target.closest('button,.ns-node-wrap,.ns-slot')))return;pan={x:e.clientX,y:e.clientY,left:viewport.scrollLeft,top:viewport.scrollTop,id:e.pointerId};viewport.setPointerCapture(e.pointerId);viewport.classList.add('is-panning');e.preventDefault();});
   viewport.addEventListener('pointermove',e=>{if(!pan)return;viewport.scrollLeft=pan.left-(e.clientX-pan.x);viewport.scrollTop=pan.top-(e.clientY-pan.y);});
   const release=()=>{pan=null;viewport.classList.remove('is-panning');};viewport.addEventListener('pointerup',release);viewport.addEventListener('pointercancel',release);
-  return{setBounds(next){bounds=next;apply();},setZoom,fit,getZoom:()=>zoom,focus(id){const target=element.querySelector(`[data-node-id="${id}"]`)||element.querySelector(`[data-route="${id}"]`);if(!target)return;const box=target.getBoundingClientRect(),v=viewport.getBoundingClientRect();viewport.scrollBy({left:box.left-v.left-(v.width-box.width)/2,top:box.top-v.top-(v.height-box.height)/2,behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'instant':'smooth'});}};
+  return{setBounds(next){bounds=next;apply();},setZoom,fit,getZoom:()=>zoom,
+    clientToWorld(x,y){const rect=element.getBoundingClientRect();return{x:(x-rect.left)/zoom,y:(y-rect.top)/zoom};},
+    visibleCenter(){const rect=viewport.getBoundingClientRect();return this.clientToWorld(rect.left+viewport.clientWidth/2,rect.top+viewport.clientHeight/2);},
+    focus(id){const target=element.querySelector(`[data-node-id="${id}"]`)||element.querySelector(`[data-route="${id}"]`);if(!target)return;const box=target.getBoundingClientRect(),v=viewport.getBoundingClientRect();viewport.scrollBy({left:box.left-v.left-(v.width-box.width)/2,top:box.top-v.top-(v.height-box.height)/2,behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'instant':'smooth'});}};
 }

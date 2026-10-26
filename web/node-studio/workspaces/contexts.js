@@ -1,10 +1,10 @@
-import { createWorkspace, el, field, actions, notice, inputFor, assetURL } from './shared.js';
+import { createWorkspace, el, field, actions, notice, inputFor, assetURL, scopedNodes } from './shared.js';
 
 export async function sceneContext(container, context) {
   const ws = createWorkspace(container, context, { title: '让 AI 找资料，你来选这一场', description: '不用手填角色背景。让视觉助手先识别服装，确认角色后寻找战斗场景，最后由你选择采用。', kicker: 'STORY & CONSTRAINTS' });
   const workflow = context.getWorkflow?.() || context.workflow;
   const currentSource = assetURL(inputFor(context));
-  const research = workflow.nodes.filter(node => node.type === 'character_research' && node.params?.selectedScene
+  const research = scopedNodes(context).filter(node => node.type === 'character_research' && node.params?.selectedScene
     && (!node.params.adoptedImageFingerprint || node.params.adoptedImageFingerprint === node.params.imageFingerprint)
     && (!node.params.adoptedSourceImageUrl || node.params.adoptedSourceImageUrl === currentSource)).sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))[0]?.params;
   const character = research?.selectedCharacter, scene = research?.selectedScene;
@@ -16,7 +16,7 @@ export async function sceneContext(container, context) {
       try { const url = new URL(source.url); if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) selected.append(el('a', { href: url.href, target: '_blank', rel: 'noopener noreferrer', text: source.title || url.hostname })); } catch { /* Unreadable references are not made clickable. */ }
     }
   } else if (ws.params.character || ws.params.scene) selected.append(el('span', { class: 'ns-research-badge', text: '之前保存的设定' }), el('h3', { text: ws.params.character || '当前角色' }), el('p', { text: ws.params.scene || '还没有选择场景。' }));
-  else selected.append(el('h3', { text: '还没选场景？从服装照片开始。' }), el('p', { text: '识别候选 → 你确认角色 → AI 检索资料 → 你选择一个创作方向。' }));
+  else selected.append(el('h3', { text: '选择角色与场景' }));
   selected.append(actions(ws.button(character && scene ? '更换角色或场景' : '识别角色并寻找场景', async () => {
     if (!context.addCharacterResearch) throw new Error('请从设定节点库加入“角色识别与资料”节点，或重新打开新版创作台。');
     await context.addCharacterResearch();
@@ -27,7 +27,7 @@ export async function sceneContext(container, context) {
     field(ws, 'protectedNotes', '特别需要保留的地方', { type: 'textarea', rows: 2, placeholder: '例如：胸前徽章、帽型、腰带。' }).group,
     field(ws, 'bloodColor', '希望使用的痕迹主色', { type: 'color', value: ws.params.bloodColor || '#6d2530', help: '没有确认血色设定时，保持为你的视觉选择。后续笔刷仍能修改。' }).group,
     actions(ws.button('保存补充设定', () => ws.run())));
-  ws.body.append(selected, details, notice('浏览候选和资料不会改变已经采用的方案；明确采用新场景后，才影响后续创作。'));
+  ws.body.append(selected, details);
   return ws;
 }
 

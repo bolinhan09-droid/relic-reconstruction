@@ -4,7 +4,7 @@
 
 ## Windows 免安装包
 
-1. 打开 [v0.10.0 下载页](https://github.com/bolinhan09-droid/relic-reconstruction/releases/tag/v0.10.0)。
+1. 打开 [版本下载页](https://github.com/bolinhan09-droid/relic-reconstruction/releases)，选择需要的版本。
 2. 在附件中下载 `RelicReconstruction-Windows-x64.zip`；GitHub 自动生成的 Source code 是源码，不是桌面程序。
 3. 将整个 ZIP 解压到可写目录，保留 EXE 旁的 `_internal` 和其他文件。
 4. 双击 `RelicReconstruction.exe`。缺少 WebView2 时安装 [微软官方运行时](https://developer.microsoft.com/microsoft-edge/webview2/)。
@@ -18,7 +18,7 @@ Windows 10/11 x64、Python 3.10–3.12。下载 `RelicReconstruction-source.zip`
 
 ## 先体验不依赖大模型的部分
 
-1. 新建工作流，上传照片，添加“精致修改”。
+1. 新建工作流，上传照片。v0.11 默认标准流程已包含“精致修改”，可直接进入。
 2. 绘制几笔痕迹，保存后回到总览；从该步骤创建两条分支，分别调整。
 3. 合拢后添加融合创作。同底图可编辑笔触可以实时比较和采用。
 4. 打开三维战斗，旋转代理服装并划切，检查命中记录；手势可由按钮自行开启摄像头。
@@ -30,4 +30,4 @@ Windows 10/11 x64、Python 3.10–3.12。下载 `RelicReconstruction-source.zip`
 
 每位使用者配置自己的 API 或本机服务。需要看图的节点必须连接视觉模型；聊天可用不代表视觉或图像编辑可用。在线调用只在明确执行时发生，按服务商规则计费。软件不会提供作者的密钥或账号用量。
 
-照片与方案默认保存在软件旁的 `workspace`。更新前关闭旧版并备份此目录；分享代码时不要附带它。完整功能边界见 [v0.10 说明](V010.md)。
+直接解压启动时，照片与方案默认保存在软件旁的 `workspace`；固定目录安装可显式指定独立工作区。更新前关闭旧版并备份工作区；分享代码时不要附带它。v0.11 支持验证 ZIP 后覆盖固定程序目录，见 [更新说明](V011.md)。已有算法的功能边界见 [v0.10 说明](V010.md)。

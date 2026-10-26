@@ -32,8 +32,9 @@ import runtime_paths
 _LOCK = threading.RLock()
 _CHAT = threading.BoundedSemaphore(1)
 _ACTIVE = "deepseek"
+DEEPSEEK_DEFAULTS = {"baseUrl": "https://api.deepseek.com/v1", "model": "deepseek-flash", "vision": True}
 _SETTINGS = {
-    "deepseek": {"baseUrl": "https://api.deepseek.com/v1", "model": "deepseek-flash", "apiKey": "", "vision": True},
+    "deepseek": {**DEEPSEEK_DEFAULTS, "apiKey": ""},
     "openai_compatible": {"baseUrl": "", "model": "", "apiKey": "", "vision": False},
     "local_openai": {"baseUrl": "http://127.0.0.1:8188/v1", "model": "qwen3.5-4b-local", "apiKey": "", "vision": True},
 }
@@ -184,6 +185,16 @@ def configure(payload):
         _error("请选择 DeepSeek、公开兼容接口或本机兼容对话服务")
     with _LOCK:
         value = copy.deepcopy(_SETTINGS[provider])
+        # Official DeepSeek is a key-only preset. The API still requires a model
+        # ID; the app supplies its rolling alias. Explicit advanced fields are
+        # retained for compatible clients, without reusing another host's key.
+        if provider == "deepseek":
+            payload = dict(payload)
+            if "apiKey" in payload and set(payload) <= {"provider", "apiKey"}:
+                payload.update(DEEPSEEK_DEFAULTS)
+            for name in ("baseUrl", "model"):
+                if name in payload and isinstance(payload[name], str) and not payload[name].strip():
+                    payload[name] = DEEPSEEK_DEFAULTS[name]
         if provider == "local_openai":
             try:
                 base_url = runtime_paths.loopback_url(payload.get("baseUrl", value["baseUrl"]))

@@ -137,16 +137,17 @@ def main():
         assert fifth["nodes"][3]["status"] == "stale"
         checks.append("reorder marks prior outputs stale")
 
-        invalid = copy.deepcopy(sample)
-        invalid["nodes"].append(node("input2", "garment_input"))
-        rejects(422, validate_workflow, invalid)
+        independent = copy.deepcopy(sample)
+        independent["nodes"].append(node("input2", "garment_input"))
+        independent["routes"] = [{"id": "route-second", "label": "另一件服装", "order": ["input2"], "x": 40, "y": 500}]
+        assert validate_workflow(independent)["routes"] == independent["routes"]
         invalid = copy.deepcopy(sample)
         invalid["order"] = ["quick", "input", "image"]
         rejects(422, validate_workflow, invalid)
         invalid = copy.deepcopy(sample)
         invalid["order"].append("missing")
         rejects(422, validate_workflow, invalid)
-        checks.append("unique garment, starting type, missing references")
+        checks.append("independent garments, starting type, missing references")
 
         invalid = copy.deepcopy(sample)
         invalid["nodes"][2]["params"]["sourceNodeId"] = "image"

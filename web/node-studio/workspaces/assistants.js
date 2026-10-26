@@ -1,85 +1,182 @@
-import { createWorkspace, el, field, actions, notice, inputFor, assetURL, renderReport } from './shared.js';
+import { createWorkspace, el, field, actions, inputFor, assetURL } from './shared.js';
 import { createRectangleCanvas } from './canvas-selection.js';
 import { assistantSettings } from './assistant-settings.js';
-import { precedingNodeIds } from '../core/model.js';
+import { precedingNodeIds, laneForNode } from '../core/model.js';
+import { intentText } from '../core/text-input.js';
 
 const definitions = {
-  intent_assist: { title: '一起把想法说清楚', description: '结合当前服装与场景，整理目标、保留条件和下一步。', label: '你目前的想法', action: '一起整理想法' },
-  design_advice: { title: '一起看看，下一步还能怎么改', description: '查看当前画面，讨论具体部位和候选方向。', label: '最想讨论什么', action: '看看修改建议' },
-  design_review: { title: '对照前后，审阅这一版', description: '视觉模型查看原图与当前效果，大模型结合场景和修改要求解释问题。', label: '特别希望检查什么', action: '审阅当前方案' },
-  agent_execute: { title: '告诉助手，你想怎么改', description: '围绕连接的节点执行修改；需要其他能力时，准备相应节点。先看候选，再决定采用。', label: '这次一起完成什么', action: '执行并预览' }
+  intent_assist: { title: '一起把想法说清楚', label: '继续聊你的想法', action: '一起整理' },
+  design_advice: { title: '一起看看下一步', label: '接下来想怎么改', action: '一起讨论' },
+  design_review: { title: '审阅这一版', label: '希望重点看哪里', action: '审阅当前方案' },
+  agent_execute: { title: '和助手一起修改', label: '这次一起完成什么', action: '一起修改' }
 };
-const tools = { adjust_strokes: '调整已有笔触', remove_strokes: '移除笔触', add_stroke: '添加痕迹', protect_region: '保护区域', create_node: '接入工作节点', run_local_tool: '运行本机工具' };
+
+function loadTheme() {
+  if (document.querySelector('[data-assistant-conversation-theme]')) return;
+  document.head.append(el('link', { rel: 'stylesheet', href: new URL('./assistant-conversation.css', import.meta.url).href, 'data-assistant-conversation-theme': '' }));
+}
 
 export async function assistantWorkspace(container, context) {
+  loadTheme();
   const definition = definitions[context.node.type], ws = createWorkspace(container, context, definition);
   const execution = context.node.type === 'agent_execute';
-  let latest = context.node.output || {}, working = false, timer;
-  const flow = context.getWorkflow?.() || context.workflow;
-  const host = flow.nodes.find(node => Object.values(node.attachments || {}).some(ids => ids.includes(context.node.id)));
-  const target = host || flow.nodes.find(node => node.id === inputFor(context).sourceNodeId)
-    || precedingNodeIds(flow, context.node.id).reverse().map(id => flow.nodes.find(node => node.id === id)).find(node => assetURL(node?.output));
-  const stage = el('section', { class: 'ns-assistant-stage', 'aria-label': '作品与候选' });
-  stage.append(el('div', { class: 'ns-assistant-target' }, el('strong', { text: `协作对象 · ${target?.label || '当前路线的上游作品'}` }), el('span', { text: execution ? '理解目标 → 调用工具 → 比较候选 → 采用' : '服装图片 + 已连接的场景与条件' })));
-  const selection = execution ? await createRectangleCanvas(ws, inputFor(context), ws.params.regions || [], regions => ws.patch({ regions })) : null;
-  stage.append(selection ? selection.element : ws.preview());
-  if (selection) stage.append(actions(ws.button('撤销选区', () => selection.undo()), ws.button('清除选区', () => selection.clear())), notice('先框选协作位置，或让视觉助手定位。图片内的痕迹与可编辑笔触会分别处理。'));
-  const comparison = el('section', { class: 'ns-assistant-comparison', hidden: true, 'aria-label': '执行前后对比' });
-  // Keep the candidate beside adoption controls, before the large selection canvas.
-  stage.insertBefore(comparison, stage.children[1] || null);
+  ws.root.classList.add('ns-ws-wide', 'ns-assistant-v116'); ws.root.dataset.arranged = 'true'; ws.outputDetails.hidden = true;
+  let latest = context.node.output || {}, working = false, timer, selection, shownUrl = '', selectionSerial = 0;
+  let pages = [], pageIndex = 0;
+  const workflow = () => context.getWorkflow?.() || context.workflow;
+  function targetNode() {
+    const flow = workflow();
+    return flow.nodes.find(node => node.id === ws.params.targetNodeId)
+      || flow.nodes.find(node => Object.values(node.attachments || {}).some(ids => ids.includes(context.node.id)))
+      || precedingNodeIds(flow, context.node.id).reverse().map(id => flow.nodes.find(node => node.id === id)).find(node => assetURL(node?.output));
+  }
+  const stage = el('section', { class: 'ns-assistant-stage', 'aria-label': '当前作品' });
+  const targetTitle = el('strong'), versions = el('select', { class: 'ns-input ns-assistant-versions', 'aria-label': '切回历史画面' });
+  const imageHost = el('div', { class: 'ns-assistant-image-host' });
+  const regionTools = actions(ws.button('撤销选区', () => selection?.undo?.()), ws.button('清除选区', () => selection?.clear?.()));
+  regionTools.hidden = !execution;
+  regionTools.append(el('small', { text: '框选协作位置，或直接说出想法' }));
+  stage.append(el('div', { class: 'ns-assistant-target' }, targetTitle, execution ? versions : null), imageHost, regionTools);
+
   const side = el('aside', { class: 'ns-assistant-dialogue', 'aria-label': 'AI 协作对话' });
+  const tabs = el('div', { class: 'ns-assistant-tabs', role: 'tablist', 'aria-label': '协作内容' });
+  const panels = {}, panelHost = el('div', { class: 'ns-assistant-panel-host' });
+  function addPanel(key, label) {
+    const id = `assistant-${context.node.id}-${key}`;
+    panels[key] = el('section', { class: 'ns-assistant-panel', id, role: 'tabpanel', hidden: key !== 'chat' });
+    const tab = el('button', { type: 'button', role: 'tab', 'aria-controls': id, 'aria-selected': String(key === 'chat'), text: label });
+    ws.on(tab, 'click', () => {
+      for (const [name, panel] of Object.entries(panels)) panel.hidden = name !== key;
+      for (const item of tabs.children) item.setAttribute('aria-selected', String(item === tab));
+      if (key === 'chat') requestAnimationFrame(() => renderDialogue(false));
+    });
+    tabs.append(tab); panelHost.append(panels[key]); return panels[key];
+  }
+  addPanel('chat', '讨论'); addPanel('constraints', '固定要求'); addPanel('connection', '连接');
   const transcript = el('div', { class: 'ns-assistant-transcript', 'aria-live': 'polite' });
-  const prompt = field(ws, 'intent', definition.label, { type: 'textarea', rows: 4, placeholder: execution ? '例如：选中的披风下摆加少量暗红飞溅，保留领巾。需要分割时帮我接上服装分割。' : '例如：下摆的血迹是不是太密了？想更自然，同时保留角色原本的轮廓。' });
-  const progress = el('p', { class: 'ns-assistant-progress', role: 'status' });
+  const counter = el('small'), previous = ws.button('上一页', () => { pageIndex--; paintDialogue(); }), next = ws.button('下一页', () => { pageIndex++; paintDialogue(); });
+  panels.chat.append(transcript, el('div', { class: 'ns-assistant-dialogue-pager' }, previous, counter, next));
+  const constraints = field(ws, 'confirmedConstraints', '一直保留的要求', { type: 'textarea', rows: 5, placeholder: '例如：领巾与徽记不改，只调整披风下摆' });
+  constraints.control.maxLength = 1600;
+  panels.constraints.append(constraints.group, el('small', { text: '可随时改写，助手在后续讨论中继续遵循' }));
+  if (context.node.type === 'design_review') panels.constraints.append(field(ws, 'reviewFocus', '审阅重点', { options: [{ value: 'overall', label: '整体分布与场景' }, { value: 'preservation', label: '角色特征与保护区域' }, { value: 'production', label: '制作准备' }], value: ws.params.reviewFocus || 'overall' }).group);
   const service = await assistantSettings(ws, context);
   if (ws.signal.aborted) return ws;
-  async function invoke(action) {
+  panels.connection.append(service.element);
+
+  const textEditor = field(ws, '_intentOutput', '输出给下一步', { type: 'textarea', rows: 7, persist: false });
+  textEditor.control.dataset.intentOutput = '';
+  if (context.node.type === 'intent_assist') {
+    const outputPanel = addPanel('output', '整理结果');
+    outputPanel.append(textEditor.group, actions(ws.button('保存文字输出', async () => {
+      const text = textEditor.control.value.trim();
+      if (!text) throw Error('先整理想法，或写下要输出的要求');
+      latest = { ...latest, kind: 'intent', title: '整理后的想法', text, textRole: 'generation_brief',
+        textVersionId: crypto.randomUUID().replaceAll('-', '').slice(0, 16), userEdited: true, message: '文字输出已保存', status: 'completed' };
+      await ws.commit(latest); ws.outputDetails.hidden = true;
+    })));
+  }
+  const prompt = field(ws, 'intent', definition.label, { type: 'textarea', rows: 3, placeholder: execution ? '例如：血迹再淡一点，保留领巾' : '说出你的想法，可以接着上一轮继续聊' });
+  prompt.control.maxLength = 4000;
+  const progress = el('p', { class: 'ns-assistant-progress', role: 'status' });
+  const run = ws.button(definition.action, () => invoke(execution ? 'execute' : 'plan'), { primary: true });
+  const composer = el('div', { class: 'ns-assistant-composer' }, prompt.group, progress, actions(run));
+  side.append(tabs, panelHost, composer); ws.body.append(el('div', { class: 'ns-assistant-bench' }, stage, side));
+  const measure = el('p', { class: 'ns-assistant-message', 'aria-hidden': 'true', style: 'position:fixed;left:-100000px;top:0;visibility:hidden;margin:0;pointer-events:none' });
+  ws.root.append(measure);
+
+  function dialogueEntries() {
+    const conversation = latest.conversation, scope = conversation?.scope;
+    const flow = workflow(), target = targetNode(), lane = laneForNode(flow, target?.id);
+    if (scope && scope.workflowId === flow.id && scope.nodeId === context.node.id && scope.targetNodeId === target?.id && scope.laneId === (lane?.id || 'main')) return Array.isArray(conversation.messages) ? conversation.messages : [];
+    if (!conversation && latest.message) return [{ id: 'legacy', role: 'assistant', content: latest.message, state: 'discussion' }];
+    return [];
+  }
+  function renderDialogue(goLatest = true) {
+    if (ws.signal.aborted) return;
+    const current = pages[pageIndex];
+    if (!transcript.clientWidth || !transcript.clientHeight) return;
+    const height = Math.max(23, transcript.clientHeight - 64);
+    measure.style.width = `${transcript.clientWidth}px`; measure.style.font = getComputedStyle(transcript).font; measure.style.lineHeight = '23px';
+    pages = [];
+    for (const entry of dialogueEntries()) {
+      if (!entry || !['user', 'assistant'].includes(entry.role) || typeof entry.content !== 'string') continue;
+      const text = Array.from(entry.content.replace(/\n执行状态：[^\n]*$/, '').trim());
+      for (let start = 0, chunk = 0; start < text.length; chunk++) {
+        let low = 1, high = Math.min(500, text.length - start), fits = 1;
+        while (low <= high) {
+          const length = Math.floor((low + high) / 2); measure.textContent = text.slice(start, start + length).join('');
+          if (measure.getBoundingClientRect().height <= height) { fits = length; low = length + 1; } else high = length - 1;
+        }
+        pages.push({ ...entry, content: text.slice(start, start + fits).join(''), chunk }); start += fits;
+      }
+    }
+    const preserved = current ? pages.findIndex(item => item.id === current.id && item.chunk === current.chunk) : -1;
+    const newest = pages.length ? pages.findIndex(item => item.id === pages.at(-1).id) : 0;
+    pageIndex = goLatest ? newest : preserved >= 0 ? preserved : newest;
+    paintDialogue();
+  }
+  function paintDialogue() {
+    pageIndex = Math.max(0, Math.min(pageIndex, pages.length - 1));
+    const entry = pages[pageIndex]; transcript.replaceChildren();
+    if (entry) {
+      transcript.append(el('strong', { class: 'ns-assistant-speaker', text: entry.role === 'user' ? '你' : '创作助手' }), el('p', { class: 'ns-assistant-message', text: entry.content }));
+      if (entry.role === 'assistant' && entry.state === 'applied') transcript.append(el('small', { class: 'ns-assistant-applied', text: '已更新当前画面' }));
+    } else transcript.append(el('p', { class: 'ns-assistant-empty', text: execution ? '直接说出想改的地方，结果会显示在左侧' : '从一个想法开始，这里会保留你们的讨论' }));
+    previous.disabled = !pages.length || pageIndex === 0; next.disabled = !pages.length || pageIndex >= pages.length - 1;
+    counter.textContent = pages.length ? `${pageIndex + 1} / ${pages.length}` : '本节点的讨论';
+  }
+  function renderVersions(target) {
+    versions.replaceChildren(el('option', { value: '', text: '当前画面' }));
+    const history = target?.versions || [];
+    for (let index = history.length - 1; index >= 0; index--) {
+      const version = history[index]; if (!version?.id || !assetURL(version.output)) continue;
+      versions.append(el('option', { value: version.id, text: `版本 ${index + 1}${version.savedAt ? ' · ' + new Date(version.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}` }));
+    }
+    versions.disabled = working || versions.options.length < 2;
+  }
+  async function updateStage() {
+    const target = targetNode(), source = target?.output || inputFor(context), url = assetURL(source);
+    targetTitle.textContent = `协作对象 · ${target?.label || '当前作品'}`; renderVersions(target);
+    if (url === shownUrl && imageHost.children.length) return;
+    shownUrl = url; const serial = ++selectionSerial;
+    selection?.destroy?.(); selection = null; imageHost.replaceChildren();
+    if (execution) {
+      const nextSelection = await createRectangleCanvas(ws, source, ws.params.regions || [], regions => ws.patch({ regions }));
+      if (ws.signal.aborted || serial !== selectionSerial) { nextSelection.destroy?.(); return; }
+      selection = nextSelection; imageHost.append(selection.element);
+    } else imageHost.append(ws.preview(source, '当前方案'));
+  }
+  async function invoke(action, extra = {}) {
     if (working) return;
-    const useModel = !['adopt', 'restore'].includes(action);
-    if (useModel && !String(ws.params.intent || '').trim() && context.node.type !== 'design_review') throw Error('先告诉助手，这次想完成什么。');
+    const useModel = !['adopt', 'restore', 'switch_version'].includes(action);
+    if (useModel && !String(ws.params.intent || '').trim() && context.node.type !== 'design_review') throw Error('先说说这次想完成什么');
     working = true; const started = Date.now();
-    progress.textContent = useModel ? '正在读取作品并分析任务…' : '正在保存这次选择…';
-    timer = setInterval(() => { progress.textContent = `${useModel ? '助手正在处理，首次加载可能较慢' : '正在更新方案'} · ${Math.round((Date.now() - started) / 1000)} 秒`; }, 1000);
-    side.querySelectorAll('button').forEach(button => button.disabled = true);
+    run.disabled = true; versions.disabled = true; prompt.control.disabled = true; constraints.control.disabled = true;
+    progress.textContent = useModel ? '正在读取当前作品' : '正在切换画面';
+    timer = setInterval(() => { progress.textContent = `助手正在处理 · ${Math.round((Date.now() - started) / 1000)} 秒`; }, 1000);
     try {
-      const result = await ws.run({ assistantAction: action, ...(useModel ? {} : { runId: latest.runId }), confirmedExternal: service.isExternal() });
-      latest = result.result || result.node?.output || result; renderResult(); progress.textContent = latest.message || '处理完成。';
+      const result = await ws.run({ assistantAction: action, confirmedExternal: useModel && service.isExternal(), ...extra });
+      latest = result.result || result.node?.output || result; ws.outputDetails.hidden = true;
+      const appliedGeometry = latest.adopted && latest.validation?.kind === 'local_garment_tool';
+      const clearPrompt = useModel && latest.kind !== 'assistant_unavailable' && latest.semanticAI;
+      // The old selection cannot be carried across a new garment coordinate space.
+      if (appliedGeometry || latest.restored) { selection?.clear?.(); ws.patch({ regions: [] }); }
+      if (clearPrompt) { prompt.control.value = ''; ws.patch({ intent: '' }); }
+      if (clearPrompt || appliedGeometry || latest.restored) await ws.save();
+      if (context.node.type === 'intent_assist') textEditor.control.value = intentText(latest);
+      await updateStage(); renderDialogue();
+      progress.textContent = appliedGeometry ? '新画面已更新，可重新框选位置' : latest.adopted ? '画面已更新，可继续聊或切回旧版' : latest.restored ? '已切回历史画面' : latest.semanticAI ? '可以接着聊' : latest.message || '已完成';
+    } catch (error) {
+      progress.textContent = '本次未完成，输入与之前的讨论已保留'; throw error;
     } finally {
       clearInterval(timer); working = false;
-      if (!ws.signal.aborted) { side.querySelectorAll('button').forEach(button => button.disabled = false); updateActions(); }
+      if (!ws.signal.aborted) { run.disabled = false; prompt.control.disabled = false; constraints.control.disabled = false; renderVersions(targetNode()); }
     }
   }
-  const run = ws.button(definition.action, () => invoke(execution ? 'preview' : 'plan'), { primary: true });
-  const adopt = ws.button('采用这版修改', () => invoke('adopt'), { primary: true });
-  const restore = ws.button('恢复采用前', () => invoke('restore'));
-  const candidateActions = actions(adopt, restore);
-  function updateActions() { adopt.hidden = latest.kind !== 'assistant_candidate'; restore.hidden = latest.kind !== 'assistant_adoption'; candidateActions.hidden = adopt.hidden && restore.hidden; }
-  function renderResult() {
-    transcript.replaceChildren(); comparison.replaceChildren(); comparison.hidden = !assetURL(latest.candidateImageUrl);
-    if (!comparison.hidden) for (const [label, url] of [['修改前', latest.beforeImageUrl], ['协作候选', latest.candidateImageUrl]]) if (assetURL(url)) comparison.append(el('figure', {}, el('img', { src: assetURL(url), alt: label }), el('figcaption', { text: label })));
-    if (latest.message) transcript.append(el('p', { class: 'ns-assistant-message', text: latest.message }));
-    if (latest.semanticAI) transcript.append(el('small', { text: `${latest.model || '已连接模型'} · ${latest.visualInspection || latest.imageSent ? '已读取图片' : '基于文字与结构信息'}` }));
-    for (const key of ['intentCard', 'items', 'suggestions', 'checks', 'questions']) {
-      const value = latest[key]; if (!value || Array.isArray(value) && !value.length) continue;
-      const readable = key === 'checks' && Array.isArray(value) ? value.map(check => ({ ...check, status: ({ pass: '已检查', concern: '需要关注', unknown: '待确认' })[check.status] || check.status })) : value;
-      renderReport(transcript, { [({ intentCard: '本次目标', questions: '需要补充' })[key] || key]: readable });
-    }
-    if (latest.toolCalls?.length) {
-      const steps = el('ol', { class: 'ns-assistant-steps' });
-      for (const call of latest.toolCalls) {
-        const args = call.arguments || call.args || {}, kind = call.name || call.tool || call.function?.name;
-        const nodeLabel = (context.catalog || []).find(item => item.type === (args.type || args.name))?.label;
-        steps.append(el('li', { text: `${tools[kind] || kind || '执行操作'}${nodeLabel ? ' · ' + nodeLabel : ''}` }));
-      }
-      transcript.append(el('h3', { text: '本次操作' }), steps);
-    }
-    if (latest.proposedNodes?.length) transcript.append(notice(`采用后将接入 ${latest.proposedNodes.map(node => node.label || node.type).join('、')}。`));
-    if (latest.validation?.warnings?.length) renderReport(transcript, { warnings: latest.validation.warnings });
-    if (!transcript.children.length) transcript.append(el('p', { class: 'ns-assistant-empty', text: execution ? '选中一处，或者直接说出想法。助手先看当前节点，再决定需要哪些工具。' : '这里保留本节点最近的分析结果，可以继续补充要求。' }));
-    updateActions();
-  }
-  side.append(service.element, transcript, prompt.group);
-  if (context.node.type === 'design_review') side.append(field(ws, 'reviewFocus', '审阅重点', { options: [{ value: 'overall', label: '整体分布与场景' }, { value: 'preservation', label: '角色特征与保护区域' }, { value: 'production', label: '制作准备' }], value: ws.params.reviewFocus || 'overall' }).group);
-  side.append(progress, actions(run), candidateActions); ws.body.append(el('div', { class: 'ns-assistant-bench' }, stage, side));
-  ws.root.classList.add('ns-ws-wide'); ws.root.dataset.arranged = 'true'; ws.cleanup(() => clearInterval(timer)); renderResult(); return ws;
+  ws.on(versions, 'change', () => { if (versions.value) invoke('switch_version', { versionId: versions.value }).catch(error => ws.say(error.message, true)); });
+  ws.on(prompt.control, 'keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); run.click(); } });
+  const resize = new ResizeObserver(() => renderDialogue(false)); resize.observe(transcript);
+  ws.cleanup(() => { clearInterval(timer); resize.disconnect(); selection?.destroy?.(); });
+  textEditor.control.value = intentText(latest); await updateStage(); renderDialogue(); return ws;
 }

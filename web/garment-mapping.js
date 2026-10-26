@@ -93,7 +93,7 @@ function showResult(result){session.result=result;$m('gmResult').hidden=false;co
  const metrics=result.metrics||{},figures=[];if(Number.isFinite(metrics.sourcePaintCoveredFraction))figures.push('记录笔触覆盖 '+(metrics.sourcePaintCoveredFraction*100).toFixed(1)+'%');if(Number.isFinite(metrics.unknownTargetFraction))figures.push('目标估计未知范围 '+(metrics.unknownTargetFraction*100).toFixed(1)+'%');if(figures.length){const li=document.createElement('li');li.textContent=figures.join('；')+'。这是图层范围统计，不是实物精度。';warnings.append(li);}
  for(const text of [...(Array.isArray(result.warnings)?result.warnings:[]),...(Array.isArray(result.metrics?.warnings)?result.metrics.warnings:[])])if(typeof text==='string'){const li=document.createElement('li');li.textContent=text;warnings.append(li);}
  addResultLink(downloads,'下载映射资产包',result.exportUrl,'衣片映射-'+(result.id||'结果')+'.zip');addResultLink(downloads,'下载映射图',result.resultUrl,'衣片映射.png');if(!baked)addResultLink(downloads,patch?'下载精修图像补丁':'下载透明痕迹层',result.effectLayerUrl,patch?'衣片映射-精修补丁.png':'衣片映射-透明痕迹.png');addResultLink(downloads,'下载映射记录',result.receiptUrl,'衣片映射-记录.json');
- $m('gmResult').scrollIntoView({behavior:'auto',block:'start'});
+ $m('gmResult').dispatchEvent(new CustomEvent('mapping:result'));
 }
 async function createMapping(){if(!session||session.busy)return;const token=serial;try{assertCurrent();const error=geometryError();if(error)throw Error(error);const sourceBox=cropBox(),physicalText=$m('gmPhysicalWidth').value.trim(),componentName=$m('gmComponent').value.trim();if(!componentName)throw Error('请填写要映射的部件名称。');if(!session.targetUploadId&&!session.flatlayJobId)throw Error('请先上传或生成目标平铺图。');const payload={revision:session.revision,sourceHash:session.sourceInfo?.sourceHash,componentName,sourceMode:$m('gmSourceMode').value,sourcePoints:session.pairs.map(p=>copy(p.source)),targetPoints:session.pairs.map(p=>copy(p.target)),acceptedInferred:false};if(session.suggestionId)payload.suggestionId=session.suggestionId;if(session.targetUploadId)payload.targetUploadId=session.targetUploadId;else payload.flatlayJobId=session.flatlayJobId;const sourceBoundary=selectedBoundary('source'),targetBoundary=selectedBoundary('target');if(sourceBoundary)payload.sourceBoundary=copy(sourceBoundary);if(targetBoundary)payload.targetBoundary=copy(targetBoundary);if(physicalText){const width=Number(physicalText);if(!Number.isFinite(width)||width<=0||width>1000)throw Error('实测宽度须大于0且不超过1000cm；没有测量可留空。');payload.physicalWidthCm=width;}busy(true);renderPointList();message('正在按对应点变换照片与痕迹图层…');const result=await api(`/api/projects/${encodeURIComponent(session.projectId)}/mappings`,{method:'POST',body:JSON.stringify(payload)});if(token!==serial)return;assertCurrent();showResult(result);message('映射资产已保存。请检查对应点范围、痕迹层与未知范围。');}catch(error){if(token===serial)message(error.message,true);}finally{if(token===serial){busy(false);renderPointList();}}}
 $m('gmClose').onclick=()=>dialog.close();dialog.addEventListener('close',()=>{clearTimeout(pollTimer);if(session?.pendingFlatlayId)session.busy=false;});
@@ -110,5 +110,19 @@ $m('gmGenerateFlatlay').onclick=generateFlatlay;$m('gmCreateMapping').onclick=cr
 const button=document.createElement('button');button.id='garmentMappingButton';button.className='tool-button';button.textContent='衣片映射';button.title='将战损痕迹映射到目标平铺衣片';button.onclick=openMapping;
 (document.querySelector('.canvas-heading')||document.querySelector('.canvas-toolbar')).append(button);
 window.addEventListener('resize',()=>{if(dialog.open)drawBoards();});
-window.RelicGarmentMapping=Object.freeze({open:openMapping});
+async function useTargetAsset(target){
+ if(!session||session.busy)throw Error('映射工作区尚未就绪');
+ const url=localUrl(target?.url||target?.imageUrl);
+ if(!url.startsWith('/data/uploads/')||typeof target?.id!=='string'||!target.id)throw Error('平铺照片来源无效，请重新上传');
+ if(session.targetUploadId===target.id)return;
+ const token=serial;assertCurrent();busy(true);
+ try{if(await loadImage('target',url,token)){
+   assertCurrent();session.targetUploadId=target.id;session.flatlayJobId=null;session.pendingFlatlayId=null;session.flatlayEffectAttempt=false;
+   session.selecting=null;session.selectionDraft=null;$m('gmTargetCropEnabled').checked=false;$m('gmPhysicalWidth').value='';
+   $m('gmComponent').value=String(target.componentName||'前衣片').slice(0,60);clearPoints();
+   $m('gmTargetMeta').textContent=`实拍目标 · ${session.targetImage.naturalWidth} × ${session.targetImage.naturalHeight}`;
+   message('已读取前一步的平铺照片，点击自动建议对应点开始核对');
+ }}finally{if(token===serial)busy(false);}
+}
+window.RelicGarmentMapping=Object.freeze({open:openMapping,useTargetAsset});
 })();

@@ -103,13 +103,15 @@ def _blood_metadata(stroke, points):
         _fail("新版血迹须保存 bloodVersion:2、飞溅或浸染类型，以及完整的对应参数")
     value, behaviour = stroke["bloodParameters"], stroke["bloodBehavior"]
     if behaviour == "splatter":
-        if set(value) != {"origin", "target", "force", "spread", "amount"}:
-            _fail("飞溅参数只接受起点、终点、力度、散布和染色量")
+        if not {"origin", "target", "force", "spread", "amount"}.issubset(value) or set(value) - {"origin", "target", "force", "spread", "amount", "coverage"}:
+            _fail("飞溅参数只接受起点、终点、力度、散布、染色量和覆盖范围")
         ends = _points([value["origin"], value["target"]], 2, 2)
         if points != ends:
             _fail("飞溅记录的起点与终点须与已保存笔触一致")
         clean = {"origin": ends[0], "target": ends[1],
                  **{name: _number(value[name]) for name in ("force", "spread", "amount")}}
+        if "coverage" in value:
+            clean["coverage"] = _number(value["coverage"])
     else:
         if set(value) != {"flow", "edgeSoftness", "pressures"}:
             _fail("浸染参数只接受流量、边缘柔和度和已记录的压力列表")

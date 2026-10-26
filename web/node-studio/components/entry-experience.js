@@ -7,13 +7,29 @@ const timeLabel=value=>{
 };
 
 /** Entry owns presentation only. Workflow reads and writes remain in app.js. */
-export function createEntryExperience({openProject,onRetryHistory}){
+export function createEntryExperience({openProject,deleteProject,onRetryHistory}){
   const $=id=>document.getElementById(id);
-  let ready=false,rows=[],opening=null,transition=null,splashDismissed=false,historyState='loading';
+  let ready=false,rows=[],opening=null,transition=null,splashDismissed=false,historyState='loading',splashTimer=null;
   const parts={catalog:'pending',history:'pending'};
   const splash=$('entrySplash');
   const inertTargets=[document.querySelector('.ns-topbar'),$('entry')].filter(Boolean);
-  inertTargets.forEach(element=>element.inert=true);
+  // A cached local start should open directly. Only a genuinely pending catalog
+  // shows the quiet loading screen; recent projects can keep loading inline.
+  splash.hidden=true;
+  splash.setAttribute('aria-hidden','true');
+  splash.inert=true;
+  const progress=document.createElement('div');
+  progress.className='ns-boot-progress';
+  progress.setAttribute('role','progressbar');
+  progress.setAttribute('aria-label','正在加载创作工作区');
+  $('entrySplashStatus').after(progress);
+  function showSplash(){
+    if(splashDismissed||parts.catalog!=='pending')return;
+    splash.hidden=false;splash.inert=false;
+    splash.removeAttribute('aria-hidden');
+    inertTargets.forEach(element=>element.inert=true);
+  }
+  splashTimer=setTimeout(showSplash,180);
 
   function cancelTransition(){
     if(!transition)return;
@@ -25,13 +41,10 @@ export function createEntryExperience({openProject,onRetryHistory}){
   async function dismissSplash(){
     if(splashDismissed)return;
     splashDismissed=true;
+    clearTimeout(splashTimer);splashTimer=null;
     inertTargets.forEach(element=>element.inert=false);
     splash.setAttribute('aria-hidden','true');
     splash.inert=true;
-    if(!reducedMotion()){
-      const animation=splash.animate([{opacity:1},{opacity:0}],{duration:280,easing:'ease-out'});
-      await animation.finished.catch(()=>{});
-    }
     splash.hidden=true;
   }
   function markBootPart(kind,success){
@@ -47,7 +60,9 @@ export function createEntryExperience({openProject,onRetryHistory}){
       $('entry').setAttribute('aria-busy',String(!success));
       if(historyState==='ready')renderHistory(rows);
     }
-    if(!pending.length)void dismissSplash();
+    // The editing tools are the only blocking startup dependency. A slow or
+    // failed history request must not lock an otherwise usable creation page.
+    if(kind==='catalog'||!pending.length)void dismissSplash();
   }
   function renderHistory(nextRows){
     historyState='ready';
@@ -59,7 +74,7 @@ export function createEntryExperience({openProject,onRetryHistory}){
     list.innerHTML=rows.length?rows.slice(0,8).map(row=>{
       const image=safeImage(row.thumbnailUrl||row.thumbnail||row.imageUrl);
       const count=Number.isFinite(Number(row.nodeCount))?Number(row.nodeCount):row.order?.length||0;
-      return `<button class="ns-history-card" data-history-id="${escape(row.id)}" ${!ready||opening?'disabled':''} aria-label="继续创作：${escape(row.title||'未命名创作')}"><span class="ns-history-picture">${image?`<img src="${escape(image)}" alt="" loading="lazy" draggable="false">`:icon('garment')}<span class="ns-history-open" aria-hidden="true">继续创作 ↗</span></span><span class="ns-history-details"><strong>${escape(row.title||'未命名创作')}</strong><span><small>${count} 个节点</small><time datetime="${escape(row.updatedAt||'')}">${escape(timeLabel(row.updatedAt))}</time></span></span></button>`;
+      return `<article class="ns-history-item"><button class="ns-history-card" data-history-id="${escape(row.id)}" ${!ready||opening?'disabled':''} aria-label="继续创作：${escape(row.title||'未命名创作')}"><span class="ns-history-picture">${image?`<img src="${escape(image)}" alt="" loading="lazy" draggable="false">`:icon('garment')}<span class="ns-history-open" aria-hidden="true">继续创作 ↗</span></span><span class="ns-history-details"><strong>${escape(row.title||'未命名创作')}</strong><span><small>${count} 个节点</small><time datetime="${escape(row.updatedAt||'')}">${escape(timeLabel(row.updatedAt))}</time></span></span></button>${deleteProject?`<button class="ns-history-delete" data-history-delete="${escape(row.id)}" ${!ready||opening?'disabled':''} aria-label="删除创作：${escape(row.title||'未命名创作')}">删除</button>`:''}</article>`;
     }).join(''):'<div class="ns-history-empty"><span aria-hidden="true">'+icon('history')+'</span><div><strong>还没有保存的创作</strong><p>从一张服装照片开始，之后可以在这里继续。</p></div></div>';
     list.querySelectorAll('img').forEach(image=>image.addEventListener('error',()=>{image.replaceWith(Object.assign(document.createElement('span'),{className:'ns-history-unavailable',textContent:'预览暂不可用'}));},{once:true}));
     list.querySelectorAll('[data-history-id]').forEach(button=>button.addEventListener('click',async()=>{
@@ -68,6 +83,11 @@ export function createEntryExperience({openProject,onRetryHistory}){
       $('entryHistoryStatus').textContent='正在打开创作…';
       let errorMessage='';
       try{await openProject(opening);}catch(error){errorMessage=error.message;}finally{opening=null;renderHistory(rows);if(errorMessage)$('entryHistoryStatus').textContent=errorMessage;}
+    }));
+    list.querySelectorAll('[data-history-delete]').forEach(button=>button.addEventListener('click',async event=>{
+      event.stopPropagation();if(!ready||opening||!deleteProject)return;
+      button.disabled=true;
+      try{await deleteProject(button.dataset.historyDelete);}finally{if(button.isConnected)button.disabled=false;}
     }));
   }
   function historyLoading(){
@@ -106,17 +126,14 @@ export function createEntryExperience({openProject,onRetryHistory}){
     await new Promise(resolve=>requestAnimationFrame(resolve));
     if(scope.cancelled)return;
     const dest=destination.getBoundingClientRect();
-    // A single slit opens the workspace; the actual uploaded image travels into the input tag.
-    const slit=document.createElement('div');slit.className='ns-entry-slit';slit.setAttribute('aria-hidden','true');
-    slit.innerHTML='<i></i><i></i><i></i>';
-    document.body.append(slit);scope.elements.push(slit);
-    scope.animations.push(slit.animate([{opacity:0,transform:'translateX(-11%)'},{opacity:.65,offset:.2},{opacity:0,transform:'translateX(15%)'}],{duration:520,easing:'cubic-bezier(.16,.8,.28,1)'}));
-    scope.animations.push(ghost.animate([{transform:'translate(0,0) scale(1)',opacity:1},{transform:`translate(${dest.left-rect.left}px,${dest.top-rect.top}px) scale(${dest.width/rect.width},${dest.height/rect.height})`,opacity:1,offset:.84},{transform:`translate(${dest.left-rect.left}px,${dest.top-rect.top}px) scale(${dest.width/rect.width},${dest.height/rect.height})`,opacity:0}],{duration:700,easing:'cubic-bezier(.22,.75,.15,1)',fill:'forwards'}));
+    // Spatial continuity comes from the actual uploaded image, with no
+    // decorative full-screen slash competing with the new workspace.
+    scope.animations.push(ghost.animate([{transform:'translate(0,0) scale(1)',opacity:1},{transform:`translate(${dest.left-rect.left}px,${dest.top-rect.top}px) scale(${dest.width/rect.width},${dest.height/rect.height})`,opacity:1,offset:.86},{transform:`translate(${dest.left-rect.left}px,${dest.top-rect.top}px) scale(${dest.width/rect.width},${dest.height/rect.height})`,opacity:0}],{duration:380,easing:'cubic-bezier(.22,.75,.15,1)',fill:'forwards'}));
     try{await Promise.all(scope.animations.map(animation=>animation.finished.catch(()=>{})));}
     finally{scope.elements.forEach(element=>element.remove());if(transition===scope)transition=null;}
   }
   $('skipEntrySplash').addEventListener('click',()=>void dismissSplash());
   $('entryHistoryRefresh').addEventListener('click',()=>void onRetryHistory());
-  window.addEventListener('pagehide',cancelTransition);
+  window.addEventListener('pagehide',()=>{clearTimeout(splashTimer);cancelTransition();});
   return {renderHistory,historyLoading,historyError,markBootPart,dismissSplash,transitionToStudio,cancelTransition,uploadState};
 }

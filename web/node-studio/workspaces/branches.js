@@ -33,7 +33,7 @@ export async function branchCreate(container, context) {
     if (!branches.length) routes.append(notice('还没有探索路线。添加一条路线，从当前方案继续。'));
   }
   ws.body.append(source, routes, actions(ws.button('添加探索路线', async () => {
-    if (!context.addBranch) throw new Error('当前版本未接入分支操作，请重新打开 v0.9。');
+    if (!context.addBranch) throw new Error('当前版本未接入分支操作，请重新打开当前创作台');
     await context.addBranch(context.node.id); refresh(); ws.say('新路线已添加，可以分别探索不同效果。');
   }, { primary: true })), notice('汇合时收集每条路线最后一份已采用的图片；还未采用的生成候选会继续留在原节点里。'));
   refresh(); return ws;

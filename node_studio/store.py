@@ -20,8 +20,12 @@ from fastapi import HTTPException
 
 from .catalog import BY_TYPE
 from .graph import lanes, dependency_map, validate_structure
+from .document_storage import (DocumentStorage, DocumentStorageError, MAX_DOCUMENT_BYTES,
+                               REFERENCE_KEY, STORAGE_KEY, encode, workflow_folder)
 
-MAX_BYTES = 3 * 1024 * 1024
+# Bound the compact, editable document rather than pretty-printed whitespace.
+# Large repeated brush geometry is separately stored by content hash on disk.
+MAX_BYTES = MAX_DOCUMENT_BYTES
 MAX_NODES = 200
 _ID = re.compile(r"[A-Za-z0-9_-]{1,100}")
 _SECRET_KEYS = {"apikey", "api_key", "authorization", "bearertoken", "bearer_token", "experimental_bearer_token", "secret", "password", "accesstoken", "access_token"}
@@ -73,6 +77,8 @@ def _safe_json(value, depth=0):
         for key, item in value.items():
             if not isinstance(key, str) or key.lower() in _SECRET_KEYS:
                 fail("工作流只接受非密钥的节点设置")
+            if key in {REFERENCE_KEY, STORAGE_KEY}:
+                fail("工作流包含无效的内部保存字段")
             _safe_json(item, depth + 1)
         return
     fail("节点记录必须是 JSON 数据")
@@ -81,13 +87,11 @@ def _safe_json(value, depth=0):
 def bounded_copy(value):
     _safe_json(value)
     try:
-        # Check the same representation that is persisted so pretty-printing
-        # cannot create a file that the next read refuses as oversized.
-        raw = json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False)
+        raw = encode(value)
     except (ValueError, TypeError, RecursionError):
         fail("工作流格式无效")
-    if len(raw.encode("utf-8")) > MAX_BYTES:
-        fail("工作流记录超过 3 MB，请减少嵌入数据", 413)
+    if len(raw) > MAX_BYTES:
+        fail("这份创作的历史版本较多，暂时无法整体保存；当前画布仍保留，请先导出作品备份", 413)
     return json.loads(raw)
 
 
@@ -139,9 +143,6 @@ def validate_workflow(value):
                 fail("同一附件不能重复连接")
         by_id[identifier] = node
 
-    garment_ids = [node["id"] for node in nodes if node["type"] == "garment_input"]
-    if len(garment_ids) > 1:
-        fail("每份工作流只有一个真实服装输入，参考图请使用图片参考节点")
     order = result.setdefault("order", [])
     stash = result.setdefault("stash", [])
     if not isinstance(order, list) or not isinstance(stash, list):
@@ -153,7 +154,7 @@ def validate_workflow(value):
             fail("主线或方案架中的节点不能重复")
     if set(order).intersection(stash):
         fail("同一节点不能同时位于主线和方案架")
-    if order and (not garment_ids or order[0] != garment_ids[0]):
+    if order and by_id[order[0]]["type"] != "garment_input":
         fail("主线必须从真实服装输入开始")
     if any(BY_TYPE[by_id[identifier]["type"]]["placement"] == "attachment" for identifier in order):
         fail("参考节点请连接到参考槽，不作为真实服装主线")
@@ -163,6 +164,29 @@ def validate_workflow(value):
         fail("探索路线须为有界列表")
     occupied = set(order) | set(stash)
     lane_ids = {"main"}
+    routes = result.setdefault("routes", [])
+    if not isinstance(routes, list) or len(routes) > MAX_NODES:
+        fail("独立路线须为有界列表")
+    for route in routes:
+        if not isinstance(route, dict) or route.get("forkId"):
+            fail("独立路线不能借用分支起点")
+        identifier = safe_id(route.get("id"))
+        if identifier in lane_ids:
+            fail("路线编号不能重复")
+        lane_ids.add(identifier)
+        route["label"] = str(route.get("label") or "独立方案")[:80]
+        route_order = route.get("order")
+        if not isinstance(route_order, list) or not route_order or any(not isinstance(child, str) or child not in by_id for child in route_order):
+            fail("独立路线须包含有效节点")
+        if len(route_order) != len(set(route_order)) or occupied.intersection(route_order):
+            fail("每个节点只能位于一条路线或方案架")
+        if any(BY_TYPE[by_id[child]["type"]]["placement"] == "attachment" for child in route_order):
+            fail("该附件必须插入节点侧边")
+        for coordinate in ("x", "y"):
+            value = route.setdefault(coordinate, 0)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or abs(value) > 100_000:
+                fail("画布坐标必须是有限的位置")
+        occupied.update(route_order)
     for branch in branches:
         if not isinstance(branch, dict):
             fail("探索路线须为对象")
@@ -179,8 +203,8 @@ def validate_workflow(value):
             fail("探索路线引用了不存在的节点")
         if len(branch_order) != len(set(branch_order)) or occupied.intersection(branch_order):
             fail("每个节点只能位于一条路线或方案架")
-        if any(by_id[child]["type"] == "garment_input" or BY_TYPE[by_id[child]["type"]]["placement"] == "attachment" for child in branch_order):
-            fail("探索路线不能包含第二个服装输入或独立参考附件")
+        if any(BY_TYPE[by_id[child]["type"]]["placement"] == "attachment" for child in branch_order):
+            fail("该附件必须插入节点侧边")
         occupied.update(branch_order)
     for node in nodes:
         for slot, children in node["attachments"].items():
@@ -199,6 +223,8 @@ def validate_workflow(value):
             references.append(params["sourceNodeId"])
         if params.get("baseNodeId"):
             references.append(params["baseNodeId"])
+        if params.get("targetNodeId"):
+            references.append(params["targetNodeId"])
         for key in ("candidateIds", "sourceNodeIds"):
             items = params.get(key, [])
             if not isinstance(items, list):
@@ -297,16 +323,17 @@ class WorkflowStore:
                 return None
             if path.stat().st_size > MAX_BYTES:
                 fail("本地工作流记录超过大小上限", 500)
-            return json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            fail("本地工作流读取失败，原文件已保留", 500)
+            value = json.loads(path.read_text(encoding="utf-8"))
+            return DocumentStorage(workflow_folder(path), self._write_raw).unpack(value)
+        except (OSError, ValueError, RecursionError):
+            fail("这份创作的部分记录暂时无法读取，原文件已保留，请从备份恢复后重试", 500)
 
-    def _write(self, path, value):
+    def _write_raw(self, path, raw):
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
         try:
-            with temporary.open("w", encoding="utf-8") as stream:
-                json.dump(value, stream, ensure_ascii=False, indent=2, allow_nan=False)
+            with temporary.open("wb") as stream:
+                stream.write(raw)
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(temporary, path)
@@ -315,6 +342,13 @@ class WorkflowStore:
         finally:
             if temporary.exists():
                 temporary.unlink(missing_ok=True)
+
+    def _write(self, path, value):
+        try:
+            storage = DocumentStorage(workflow_folder(path), self._write_raw)
+            self._write_raw(path, encode(storage.pack(value)))
+        except (DocumentStorageError, OSError, RecursionError):
+            fail("创作记录未能完整保存，原有版本已保留；请备份当前画布后重试", 500)
 
     def get(self, identifier):
         with self.lock:
@@ -363,6 +397,17 @@ class WorkflowStore:
         folder = self._folder(value["id"])
         self._write(folder / "history" / f"revision-{value['revision']:06d}.json", value)
         self._write(folder / "workflow.json", value)
+        DocumentStorage(folder, self._write_raw).collect_orphans()
+
+    def get_history(self, identifier, filename):
+        if not isinstance(filename, str) or not re.fullmatch(r"revision-[0-9]{6,}\.json", filename):
+            fail("历史版本编号无效", 404)
+        with self.lock:
+            self.get(identifier)
+            value = self._read(self._folder(identifier) / "history" / filename)
+            if value is None:
+                fail("历史版本不存在", 404)
+            return value
 
     def history(self, identifier):
         self.get(identifier)

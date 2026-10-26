@@ -26,6 +26,7 @@ function button(text, action) {
 
 export function openLegacyWorkspace(container, {
   mode = 'brush', workflow, node, input, onCommit = () => {}, onClose = () => {}, notify = () => {},
+  headerActions = null, onStatus = () => {}, onReady = () => {},
 }) {
   if (!MODES.has(mode)) throw new Error('无法识别这个服装工作区。');
   if (!workflow?.id || !node?.id) throw new Error('当前节点缺少保存标识。');
@@ -36,29 +37,27 @@ export function openLegacyWorkspace(container, {
     container.append(empty);
     return { destroy() { empty.remove(); } };
   }
-  if (mode === 'split') return openManualParts(container, { workflow, node, source, onCommit, onClose, notify });
+  if (mode === 'split') return openManualParts(container, { workflow, node, source, onCommit, onClose, notify, headerActions, onStatus, onReady });
 
   let destroyed = false, saving = false, ready = false, proximitySensor = null, automaticLensActive = false;
+  let savePromise = null, resolveSave = null, rejectSave = null, saveTimeout = null;
+  const listeners = new AbortController();
   const channel = crypto.randomUUID();
   const root = document.createElement('section');
-  root.className = 'ns-legacy-workspace';
-  root.style.cssText = 'display:flex;flex-direction:column;min-height:500px;height:100%;width:100%;gap:10px';
+  root.className = 'ns-legacy-workspace' + (headerActions ? ' has-shared-header' : '');
+  root.style.cssText = `display:flex;flex-direction:column;min-height:${headerActions ? 0 : 500}px;height:100%;width:100%;gap:0`;
   const toolbar = document.createElement('div');
-  toolbar.style.cssText = 'display:flex;align-items:center;gap:12px;flex-wrap:wrap';
+  toolbar.className = 'ns-legacy-fallback-toolbar';
   const status = document.createElement('span'); status.setAttribute('role', 'status');
-  status.style.cssText = 'font-size:13px;flex:1;min-width:180px';
-  status.textContent = mode === 'mapping' ? '正在打开已验证的对应点映射工作区…' : '正在打开独立笔触与服装表面工作区…';
-  const save = button('保存并返回节点', () => {
-    if (destroyed || saving || !ready) return;
-    saving = true; save.disabled = true; status.textContent = '正在保存当前方案与真实输出…';
-    iframe.contentWindow.postMessage({ type: 'relic-node-save', channel, workflowId: workflow.id, nodeId: node.id }, location.origin);
-  });
+  function say(text) { status.textContent = text; onStatus(text); }
+  say('正在打开画布…'); onReady(false);
+  const save = button('保存', () => requestSave().catch(error => { if (error.name !== 'AbortError') notify(error.message); }));
   save.disabled = true;
   const exit = button('返回总览', () => onClose());
   toolbar.append(status, exit, save);
   const iframe = document.createElement('iframe');
   iframe.title = mode === 'mapping' ? '衣片展平与痕迹映射工作区' : '服装精致修改工作区';
-  iframe.style.cssText = 'flex:1;min-height:480px;width:100%;border:1px solid var(--ns-line);border-radius:3px;background:var(--ns-canvas)';
+  iframe.style.cssText = `flex:1;min-height:${headerActions ? 0 : 480}px;height:100%;width:100%;border:0;border-radius:0;background:var(--ns-canvas)`;
   // The existing brush engine remains in its own document; theme only its chrome.
   iframe.addEventListener('load', () => {
     if (destroyed) return;
@@ -72,7 +71,59 @@ export function openLegacyWorkspace(container, {
   const query = new URLSearchParams({ nodeEmbed: '1', workflowId: workflow.id, nodeId: node.id, mode, channel });
   if (source.projectId) query.set('projectId', source.projectId);
   iframe.src = '/legacy?' + query + '#studio';
-  root.append(toolbar, iframe); container.append(root);
+  if (!headerActions) root.append(toolbar);
+  root.append(iframe); container.append(root);
+
+  const headerGroup = document.createElement('div'); headerGroup.className = 'ns-workspace-legacy-actions';
+  if (headerActions) headerActions.append(headerGroup);
+  const toolsHost = headerActions ? headerGroup : toolbar;
+  const view = document.createElement('details'); view.className = 'ns-workspace-view-menu';
+  const summary = document.createElement('summary'); summary.textContent = '视图'; summary.title = '照片缩放、对照和背景';
+  const viewBody = document.createElement('div'); viewBody.className = 'ns-workspace-view-options';
+  const zoomPhoto = button('放大照片', () => lensMessage('relic-node-view-command', { command: 'zoom' }));
+  const fitPhoto = button('适应画布', () => lensMessage('relic-node-view-command', { command: 'fit' }));
+  const panPhoto = button('拖动画面', () => lensMessage('relic-node-view-command', { command: 'pan' }));
+  panPhoto.setAttribute('aria-pressed', 'false');
+  const comparePhoto = button('原图对照', () => lensMessage('relic-node-view-command', { command: 'compare' }));
+  comparePhoto.setAttribute('aria-pressed', 'false');
+  const background = button('隐藏背景', () => lensMessage('relic-node-view-command', { command: 'background' }));
+  background.disabled = true;
+  viewBody.append(zoomPhoto, fitPhoto, panPhoto, comparePhoto, background); view.append(summary, viewBody);
+  if (mode === 'brush') toolsHost.append(view);
+
+  function finishSave(error, value) {
+    const resolve = resolveSave, reject = rejectSave;
+    clearTimeout(saveTimeout); saveTimeout = null;
+    saving = false; save.disabled = !ready; savePromise = resolveSave = rejectSave = null;
+    if (error) reject?.(error); else resolve?.(value);
+  }
+  function requestSave() {
+    if (savePromise) return savePromise;
+    if (destroyed) return Promise.reject(new DOMException('工作区已关闭', 'AbortError'));
+    if (!ready) return Promise.reject(new Error('画布还在加载，请稍后再保存。'));
+    saving = true; save.disabled = true; say('正在保存…');
+    savePromise = new Promise((resolve, reject) => { resolveSave = resolve; rejectSave = reject; });
+    saveTimeout = setTimeout(() => {
+      if (!destroyed && saving) { const error = new Error('保存尚未完成，请保留当前画布并重试。'); say(error.message); finishSave(error); }
+    }, 90000);
+    iframe.contentWindow?.postMessage({ type: 'relic-node-save', channel, workflowId: workflow.id, nodeId: node.id }, location.origin);
+    return savePromise;
+  }
+  function viewState(state) {
+    if (!state) return;
+    zoomPhoto.textContent = `放大照片 · ${state.zoom || 100}%`;
+    comparePhoto.setAttribute('aria-pressed', String(Boolean(state.comparing)));
+    panPhoto.setAttribute('aria-pressed', String(Boolean(state.panning)));
+    background.disabled = !state.backgroundAvailable;
+    background.textContent = state.backgroundHidden ? '显示背景' : '隐藏背景';
+  }
+  view.addEventListener('toggle', () => { if (view.open) viewState(iframe.contentWindow?.RelicNodeWorkspace?.getViewState?.()); }, { signal: listeners.signal });
+
+  function moveLensControls() {
+    if (!headerActions || mode !== 'brush') return;
+    const controls = iframe.contentWindow?.RelicNodeMagnifier?.controls;
+    if (controls) { controls.classList.add('is-shared-header'); toolsHost.append(controls); }
+  }
 
   function lensMessage(type, detail = {}) {
     if (destroyed || !ready) return;
@@ -82,11 +133,12 @@ export function openLegacyWorkspace(container, {
   // Importing the opt-in sensor does not enable it or request camera permission.
   if (mode === 'brush') import('./proximity-sensor.js').then(({ mountProximitySensor }) => {
     if (destroyed) return;
-    proximitySensor = mountProximitySensor(toolbar, { onNear: setAutomaticActive, notify });
+    proximitySensor = mountProximitySensor(toolsHost, { onNear: setAutomaticActive, notify,
+      onStatus: text => { if (!destroyed) say(text); } });
   }).catch(() => { if (!destroyed) notify('靠近感知入口暂时未载入，仍可在画布上按住 M 使用放大镜。'); });
 
   const timeout = setTimeout(() => {
-    if (!ready && !destroyed) { status.textContent = '工作区未能及时载入。请返回后重试，原节点结果未改变。'; notify(status.textContent); }
+    if (!ready && !destroyed) { say('画布未能及时载入，请返回后重试。'); notify(status.textContent); }
   }, 20000);
   function receive(event) {
     if (destroyed || event.origin !== location.origin || event.source !== iframe.contentWindow) return;
@@ -96,30 +148,45 @@ export function openLegacyWorkspace(container, {
       iframe.contentWindow.postMessage({ type: 'relic-node-init', channel, workflowId: workflow.id, nodeId: node.id, mode, input: source,
         title: workflow.title || '节点服装方案', settings: node.params || node.config || node.settings || {}, constraints: workflow.constraints || {} }, location.origin);
     } else if (message.type === 'relic-node-loaded') {
-      ready = true; clearTimeout(timeout); save.disabled = false;
+      ready = true; clearTimeout(timeout); save.disabled = false; onReady(true); moveLensControls();
       lensMessage('relic-node-magnifier-auto', { active: automaticLensActive });
-      status.textContent = mode === 'mapping' ? '上传同一衣片的实拍平铺图，核对对应点后生成映射；保存会带回真实映射资产。' : '16 种子笔刷、保护区域、褶皱贴合与背景开关均可使用。保存不会调用付费生图。';
+      say('画布已就绪'); viewState(iframe.contentWindow?.RelicNodeWorkspace?.getViewState?.());
     } else if (message.type === 'relic-node-output') {
-      saving = false; save.disabled = false;
-      if (message.output?.kind !== 'garment' || !localImage(message.output.imageUrl)) { status.textContent = '输出没有有效的本机图片地址，未更新节点。'; return; }
-      status.textContent = '输出已保存。'; onCommit(message.output);
+      if (!saving) return;
+      if (message.output?.kind !== 'garment' || !localImage(message.output.imageUrl)) { const error = new Error('输出未能保存，请保留当前画布重试。'); say(error.message); finishSave(error); return; }
+      Promise.resolve().then(() => onCommit(message.output)).then(() => {
+        if (destroyed) return;
+        iframe.contentWindow?.RelicNodeWorkspace?.acceptSavedOutput?.();
+        lensMessage('relic-node-save-accepted'); say('已保存'); finishSave(null, message.output);
+      }).catch(error => { if (!destroyed) { say(error.message || '保存未完成'); finishSave(error); } });
     } else if (message.type === 'relic-node-error') {
-      clearTimeout(timeout); saving = false; save.disabled = !ready; status.textContent = String(message.message || '工作区未完成本次操作。'); notify(status.textContent);
+      clearTimeout(timeout); const error = new Error(String(message.message || '工作区未完成本次操作。')); say(error.message);
+      if (saving) finishSave(error); else notify(error.message);
+    } else if (message.type === 'relic-node-save-request') {
+      requestSave().catch(error => { if (error.name !== 'AbortError') notify(error.message); });
+    } else if (message.type === 'relic-node-view-state') {
+      viewState(message.state);
     } else if (message.type === 'relic-node-close') onClose();
   }
   window.addEventListener('message', receive);
   return {
-    iframe, save() { save.click(); }, setAutomaticActive,
+    iframe, save: requestSave, setAutomaticActive,
+    get ready() { return ready && !destroyed; },
+    hasUnsavedChanges() { try { return ready && !!iframe.contentWindow?.RelicNodeWorkspace?.hasUnsavedChanges?.(); } catch { return ready; } },
+    canSaveOnLeave() { try { return ready && !!iframe.contentWindow?.RelicNodeWorkspace?.canSave?.(); } catch { return false; } },
     setMagnifierEnabled(enabled) { lensMessage('relic-node-magnifier-enable', { enabled: Boolean(enabled) }); },
     setMagnifierZoom(zoom) { lensMessage('relic-node-magnifier-zoom', { zoom }); },
-    destroy() { destroyed = true; automaticLensActive = false; proximitySensor?.destroy(); proximitySensor = null; clearTimeout(timeout); window.removeEventListener('message', receive); iframe.src = 'about:blank'; root.remove(); },
+    destroy() { if (destroyed) return; destroyed = true; automaticLensActive = false; proximitySensor?.destroy(); proximitySensor = null; clearTimeout(timeout); if (saving) finishSave(new DOMException('工作区已关闭', 'AbortError')); listeners.abort(); window.removeEventListener('message', receive); headerGroup.remove(); iframe.src = 'about:blank'; root.remove(); },
   };
 }
 
 /** Real manual garment part selection, deliberately not labelled semantic segmentation. */
-function openManualParts(container, { node, source, onCommit, onClose, notify }) {
+function openManualParts(container, { node, source, onCommit, onClose, notify, headerActions, onStatus = () => {}, onReady = () => {} }) {
   let disposed = false, draft = null, pointer = null, saving = false;
+  let savePromise = null;
   const parts = structuredClone(node.params?.parts || node.config?.parts || source.parts || []);
+  let savedParts = JSON.stringify(parts);
+  onReady(false);
   const root = document.createElement('section'); root.className = 'ns-manual-parts';
   root.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:20px;min-height:500px';
   const board = document.createElement('div'); board.style.cssText = 'display:flex;align-items:flex-start;justify-content:center;min-width:0;background:#102830;border-radius:12px;padding:16px;overflow:auto';
@@ -152,21 +219,26 @@ function openManualParts(container, { node, source, onCommit, onClose, notify })
     const asset = await response.json(); return { ...part, imageUrl: asset.url, width: asset.width, height: asset.height, sourceImageUrl: source.imageUrl,
       parentWidth: image.naturalWidth, parentHeight: image.naturalHeight, parentProjectId: source.projectId || null };
   }
-  const save = button('保存分件并返回节点', async () => {
-    if (saving || disposed) return;
+  async function saveParts() {
+    if (disposed) throw new DOMException('工作区已关闭', 'AbortError');
     if (!parts.length) { status.textContent = '请先添加至少一个部件。'; return; }
     saving = true; save.disabled = true; status.textContent = '正在保存分件位置与裁切参考…';
     try {
       const outputParts = [];
       for (const part of parts) outputParts.push(await uploadPart(part));
       if (disposed) return;
-      onCommit({ ...source, kind: 'garment', imageUrl: source.imageUrl, parts: outputParts,
+      await onCommit({ ...source, kind: 'garment', imageUrl: source.imageUrl, parts: outputParts,
         selectedPartId: outputParts[0].id, segmentation: { method: 'manual_rectangle', completeSilhouette: false, inferredHiddenAreas: false },
         warnings: ['矩形分件保留原图可见像素，可能包含背景或遮挡；未生成缝纫裁片，也未推测隐藏衣物。'] });
-    } catch (error) { status.textContent = error.message; notify(error.message); }
+      savedParts = JSON.stringify(parts); onStatus('已保存');
+    } catch (error) { status.textContent = error.message; onStatus(error.message); throw error; }
     finally { saving = false; save.disabled = false; }
-  });
-  panel.append(heading, help, name, add, status, list, save, button('返回总览', onClose)); root.append(board, panel); container.append(root);
+  }
+  function requestSave() { if (!savePromise) savePromise = saveParts().finally(() => { savePromise = null; }); return savePromise; }
+  const save = button('保存分件', () => requestSave().catch(error => { if (error.name !== 'AbortError') notify(error.message); }));
+  panel.append(heading, help, name, add, status, list);
+  if (!headerActions) panel.append(save, button('返回总览', onClose));
+  root.append(board, panel); container.append(root);
   function draw() {
     if (!image.complete || !image.naturalWidth) return;
     const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
@@ -186,8 +258,11 @@ function openManualParts(container, { node, source, onCommit, onClose, notify })
   canvas.addEventListener('pointermove', event => { if (!pointer) return; const p = point(event); draft = { x: Math.min(p.x, pointer.x), y: Math.min(p.y, pointer.y), w: Math.abs(p.x - pointer.x), h: Math.abs(p.y - pointer.y) }; draw(); });
   canvas.addEventListener('pointerup', event => { pointer = null; if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId); });
   canvas.addEventListener('pointercancel', () => { pointer = null; draft = null; draw(); });
-  image.onload = () => { if (disposed) return; const scale = Math.min(1, 1600 / Math.max(image.naturalWidth, image.naturalHeight)); canvas.width = Math.round(image.naturalWidth * scale); canvas.height = Math.round(image.naturalHeight * scale); draw(); status.textContent = '拖动框选部件，再输入名称并添加。'; };
+  image.onload = () => { if (disposed) return; const scale = Math.min(1, 1600 / Math.max(image.naturalWidth, image.naturalHeight)); canvas.width = Math.round(image.naturalWidth * scale); canvas.height = Math.round(image.naturalHeight * scale); draw(); status.textContent = '拖动框选部件，再输入名称并添加。'; onReady(true); onStatus('画布已就绪'); };
   image.onerror = () => { status.textContent = '服装图片暂时无法读取，请返回检查上游输出。'; }; image.src = source.imageUrl;
   renderList();
-  return { save() { save.click(); }, destroy() { disposed = true; image.onload = image.onerror = null; root.remove(); } };
+  return { save: requestSave, get ready() { return !disposed && !!image.naturalWidth; },
+    hasUnsavedChanges: () => JSON.stringify(parts) !== savedParts,
+    canSaveOnLeave: () => !disposed && parts.length > 0,
+    destroy() { disposed = true; image.onload = image.onerror = null; root.remove(); } };
 }

@@ -7,19 +7,27 @@
   const mode = query.get('mode') === 'mapping' ? 'mapping' : 'brush';
   if (!workflowId || !nodeId || !channel) return;
   let initialized = false, saving = false, latestMapping = null, sourceContext = {};
-  let detailLens = null, automaticLensActive = false;
+  let detailLens = null, automaticLensActive = false, savedSignature = '', pendingSaveSignature = '';
   const send = (type, detail = {}) => window.parent.postMessage({ type, workflowId, nodeId, channel, ...detail }, location.origin);
   const localImage = value => { try { const u = new URL(value, location.origin); return u.origin === location.origin && /^\/(data|resources|api)\//.test(u.pathname) ? u.pathname + u.search : ''; } catch { return ''; } };
   const style = document.createElement('style');
   style.textContent = `
-    body.node-embed{margin:0!important;min-width:0!important;background:#102b33!important}
+    html:has(body.node-embed){height:100%;overflow:hidden}
+    body.node-embed{margin:0!important;min-width:0!important;height:100vh!important;overflow:hidden!important;background:#eeefea!important}
     .node-embed #landingScreen,.node-embed .app-header,.node-embed .project-heading,.node-embed .workflow,.node-embed .app-footer,.node-embed #coAssistantPane,.node-embed #coMobileNav,.node-embed .panel-top,.node-embed .panel-bottom,.node-embed .canvas-heading,.node-embed .canvas-footer,.node-embed .canvas-legend{display:none!important}
-    .node-embed #studioShell{display:block!important;min-height:100vh!important}
-    .node-embed .app-main{max-width:none!important;padding:12px!important;margin:0!important}
-    .node-embed .workbench{display:grid!important;grid-template-columns:250px minmax(0,1fr)!important;gap:12px!important;align-items:start!important}
-    .node-embed .canvas-panel{position:sticky!important;top:12px!important;min-width:0!important}
-    .node-embed .canvas-stage{height:calc(100vh - 170px)!important;min-height:360px!important;margin:0!important;padding:14px!important}
-    .node-embed .control-panel{max-height:calc(100vh - 24px)!important;overflow:auto!important}
+    .node-embed #studioShell{display:block!important;height:100vh!important;min-height:0!important}
+    .node-embed .app-main{max-width:none!important;padding:0!important;margin:0!important;height:100%!important;overflow:hidden!important}
+    .node-embed .workbench{display:grid!important;grid-template-columns:240px minmax(0,1fr)!important;gap:0!important;align-items:stretch!important;height:100%!important;min-height:0!important}
+    .node-embed .canvas-panel{position:relative!important;top:0!important;min-width:0!important;height:100%!important;display:flex!important;flex-direction:column!important;border:0!important;border-radius:0!important;overflow:hidden!important}
+    .node-embed .canvas-stage{height:auto!important;flex:1!important;min-height:0!important;margin:0!important;padding:18px!important}
+    .node-embed .canvas-toolbar,.node-embed #brushCanvasTools{display:none!important}
+    .node-embed .control-panel{height:100%!important;max-height:100%!important;overflow:auto!important;border:0!important;border-right:1px solid #d1d6cf!important;border-radius:0!important}
+    .node-embed .control-panel>.surface-workspace{border:0!important;border-bottom:1px solid #d1d6cf!important;margin:0!important;padding:8px 12px!important;position:relative!important;z-index:4}
+    .node-embed .control-panel .surface-toolbar{align-items:stretch;flex-direction:column;gap:2px}
+    .node-embed .control-panel .surface-toolbar>button{display:none!important}
+    .node-embed .control-panel .surface-settings{position:relative!important;inset:auto!important;width:auto!important;box-shadow:none!important;min-width:0!important;display:grid;grid-template-columns:1fr!important;margin-top:5px!important;padding:10px!important}
+    .node-embed .control-panel #surfaceDetails:not([open])>.surface-settings{display:none!important}
+    .node-embed .control-panel .surface-toolbar summary{min-height:32px!important;font-size:12px!important}
     .node-embed .step-content{padding:14px!important;max-height:none!important}
     .node-embed #brushRefine,.node-embed #brushImportResult,.node-embed #brushSaveSketch,.node-embed #brushAdvanced,.node-embed #quickBack,.node-embed .quick-service,.node-embed #configureCloud,.node-embed .brush-boundary,.node-embed #garmentMappingButton,.node-embed .co-refine-block,.node-embed #coGoMaking{display:none!important}
     .node-embed #garmentMappingDialog{width:calc(100vw - 12px)!important;max-height:calc(100vh - 12px)!important;margin:6px!important;border-radius:8px!important}
@@ -27,6 +35,33 @@
     @media(max-width:720px){.node-embed .workbench{grid-template-columns:190px minmax(0,1fr)!important}.node-embed .step-content{padding:9px!important}}
   `;
   document.head.append(style); document.body.classList.add('node-embed');
+
+  function editableSignature() {
+    if (!initialized || typeof projectPayload !== 'function') return '';
+    const { revision, qualityChecklist, ...content } = projectPayload();
+    return JSON.stringify({ ...content, brushSettings: state.brushSettings,
+      bloodSettings: state.bloodSettings, effectSettings: state.effectSettings });
+  }
+  function canSave() {
+    if (!initialized) return false;
+    return mode !== 'mapping' || Boolean(latestMapping?.resultUrl && !document.getElementById('gmResult')?.hidden
+      && latestMapping.projectId === state.projectId && latestMapping.projectRevision === state.revision);
+  }
+  function getViewState() {
+    const background = document.getElementById('surfaceBackground');
+    return { zoom: typeof brushZoom === 'number' ? Math.round(brushZoom * 100) : 100,
+      comparing: typeof compare !== 'undefined' && compare,
+      panning: typeof brushPan !== 'undefined' && brushPan,
+      backgroundAvailable: Boolean(background && !background.disabled),
+      backgroundHidden: background?.getAttribute('aria-pressed') === 'true' };
+  }
+  function acceptSavedOutput() { savedSignature = pendingSaveSignature || savedSignature; pendingSaveSignature = ''; }
+  window.RelicNodeWorkspace = { hasUnsavedChanges: () => editableSignature() !== savedSignature,
+    canSave, getViewState, acceptSavedOutput,
+    // A small read-only view lets guided practice observe real painting, without
+    // serializing the image or reaching into the editor's mutable state.
+    getPracticeState: () => ({ ready: initialized && canSave(),
+      strokeCount: initialized ? (state.brushStrokes || []).length : 0 }) };
 
   async function installDetailLens() {
     if (mode !== 'brush' || detailLens) return;
@@ -139,11 +174,17 @@
     if (landing) landing.hidden = true; if (studio) studio.hidden = false;
     document.body.classList.remove('landing-active'); document.body.classList.add('studio-active');
     render(); await saveProject(false);
+    const surfaceTools = document.getElementById('surfaceWorkspace'), sidePanel = document.querySelector('.control-panel');
+    if (surfaceTools && sidePanel) sidePanel.prepend(surfaceTools);
     await installDetailLens();
     if (mode === 'mapping') {
       if (!window.RelicGarmentMapping?.open) throw Error('衣片映射模块尚未载入。');
       await window.RelicGarmentMapping.open();
+      if (input.flatlayTarget) await window.RelicGarmentMapping.useTargetAsset(input.flatlayTarget);
     }
+    const { arrangeLegacyWorkbench } = await import('/node-studio/workspaces/legacy-pages.js');
+    arrangeLegacyWorkbench(document, mode);
+    savedSignature = editableSignature();
     window.dispatchEvent(new CustomEvent('studio:entered'));
     send('relic-node-loaded');
   }
@@ -166,6 +207,7 @@
       // Preserve their provenance in mappingSourceProject; the raster effect layer remains separate.
       const mappedReference = mode === 'mapping' ? { url: imageUrl, width, height, uploaded: true, generated: false, mappingId: latestMapping.id } : imageReference();
       const mappedSnapshot = mode === 'mapping' ? { ...snapshot, reference: mappedReference, brushStrokes: [], damageItems: [], protectedRects: [], surfaceOptions: null } : snapshot;
+      pendingSaveSignature = editableSignature();
       send('relic-node-output', { output: { ...sourceContext, kind: 'garment', imageUrl, projectId: state.projectId, revision: state.revision,
         width, height, reference: mappedReference, projectSnapshot: mappedSnapshot,
         brushStrokes: mode === 'mapping' ? [] : state.brushStrokes || [],
@@ -184,10 +226,42 @@
     if (!payload || payload.workflowId !== workflowId || payload.nodeId !== nodeId || payload.channel !== channel) return;
     if (payload.type === 'relic-node-init') install(payload).catch(error => send('relic-node-error', { message: error.message }));
     if (payload.type === 'relic-node-save') commit().catch(error => send('relic-node-error', { message: error.message }));
+    if (payload.type === 'relic-node-save-accepted') acceptSavedOutput();
     if (payload.type === 'relic-node-magnifier-auto') { automaticLensActive = payload.active === true; detailLens?.setAutomaticActive(automaticLensActive); }
     if (payload.type === 'relic-node-magnifier-enable') detailLens?.setEnabled(payload.enabled === true);
     if (payload.type === 'relic-node-magnifier-zoom') detailLens?.setZoom(payload.zoom);
+    if (payload.type === 'relic-node-view-command') {
+      const id = ({ zoom: 'brushZoom', fit: 'brushFit', compare: 'compareButton', background: 'surfaceBackground', pan: 'brushPan' })[payload.command];
+      if (id) { document.getElementById(id)?.click(); requestAnimationFrame(() => send('relic-node-view-state', { state: getViewState() })); }
+    }
   });
+  document.addEventListener('keydown', event => {
+    if (event.defaultPrevented || event.isComposing) return;
+    const openDialog = document.querySelector('dialog[open]');
+    // The mapping dialog is the embedded workspace itself. Other dialogs own
+    // their Escape/cancel behavior and must not dismiss the parent editor.
+    if (openDialog && !(mode === 'mapping' && openDialog.id === 'garmentMappingDialog')) return;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+      event.preventDefault(); event.stopImmediatePropagation(); send('relic-node-save-request');
+    } else if (event.key === 'Escape') {
+      event.preventDefault(); event.stopImmediatePropagation();
+      const drawing = (typeof brushStroke !== 'undefined' && brushStroke)
+        || (typeof bloodDrag !== 'undefined' && bloodDrag)
+        || (typeof brushPanPointer !== 'undefined' && brushPanPointer)
+        || (typeof coRegionDraft !== 'undefined' && coRegionDraft);
+      if (drawing && typeof cancelBrush === 'function') { cancelBrush(); return; }
+      if (typeof coPendingArea !== 'undefined' && coPendingArea) {
+        coPendingArea = null; render(); return;
+      }
+      if (typeof pointer !== 'undefined' && pointer) {
+        document.getElementById('regionOverlay')?.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true }));
+        return;
+      }
+      const menu = event.target.closest?.('details[open]');
+      if (menu) { menu.open = false; menu.querySelector('summary')?.focus(); return; }
+      send('relic-node-close');
+    }
+  }, true);
   window.addEventListener('beforeunload', () => { detailLens?.destroy(); detailLens = null; }, { once: true });
   // initialize() loads the local catalogue asynchronously; this wait is strictly bounded.
   async function ready() {

@@ -209,3 +209,40 @@ body.node-embed .gm-board, body.node-embed .gm-image-wrap {background:#e6eae2}
   .ns-ws-intro h2 {font-size:21px}
 }
 @media (prefers-reduced-motion:reduce) {.ns-node-workspace * {animation:none!important; transition:none!important; scroll-behavior:auto!important}}
+
+/* A single shared toolbar leaves the photograph and drawing surface room to work. */
+.ns-node-workspace.has-shared-header {width:100%;max-width:none;padding:16px 18px 24px;margin:0}
+.ns-node-workspace.has-shared-header.ns-ws-workbench .ns-ws-body {gap:18px;grid-template-columns:minmax(0,1fr) minmax(290px,360px)}
+.ns-node-workspace.has-shared-header .ns-ws-stage {top:0;gap:12px}
+.ns-node-workspace.has-shared-header .ns-ws-preview>img {max-height:calc(100dvh - 128px);min-height:260px;padding:10px}
+.ns-node-workspace.has-shared-header .ns-ws-inspector {padding:18px;border-top-width:1px}
+.ns-node-workspace.has-shared-header .ns-ws-status:not(.is-error) {position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+.ns-node-workspace.has-shared-header .ns-ws-selection-canvas,.ns-node-workspace.has-shared-header .ns-ws-experiment-canvas {max-height:calc(100dvh - 165px)}
+.ns-legacy-workspace.has-shared-header {padding:0!important;min-height:0!important;height:100%!important;overflow:hidden}
+.ns-legacy-workspace.has-shared-header iframe {border:0!important;border-radius:0!important;min-height:0!important}
+.ns-legacy-fallback-toolbar {display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 14px;border-bottom:1px solid var(--ns-line)}
+.ns-legacy-fallback-toolbar>span {flex:1;min-width:150px;font-size:12px}
+.ns-workspace-legacy-actions {display:flex;align-items:center;gap:8px;min-width:0}
+.ns-workspace-header .ns-magnifier-controls {display:flex;align-items:center;gap:6px;flex:none;margin:0}
+.ns-workspace-header .ns-magnifier-controls button,.ns-workspace-header .ns-workspace-view-menu summary {min-height:36px;padding:7px 11px;border:1px solid var(--ns-line,#cdd4ca);border-radius:3px;background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap}
+.ns-workspace-header .ns-magnifier-controls button[aria-pressed=true] {background:#e3e9e1;border-color:#9cae9e}
+.ns-workspace-header .ns-magnifier-controls select {width:54px;min-width:54px;min-height:36px;padding:4px 5px;border:1px solid var(--ns-line,#cdd4ca);border-radius:3px;background:var(--ns-paper,#f8f7f1);color:inherit;font:inherit;font-size:12px}
+.ns-workspace-header .ns-magnifier-hint,.ns-workspace-header .ns-proximity-sensor>span {display:none}
+.ns-workspace-header .ns-proximity-sensor {border:0;padding:0;flex:none;flex-wrap:nowrap!important;gap:6px!important}
+.ns-workspace-header .ns-proximity-sensor>button:nth-child(2):disabled {display:none}
+.ns-workspace-view-menu,.ns-ws-header-help {position:relative;flex:none;font-size:12px}
+.ns-workspace-view-menu summary,.ns-ws-header-help summary {list-style:none;cursor:pointer;user-select:none}
+.ns-workspace-view-menu summary::-webkit-details-marker,.ns-ws-header-help summary::-webkit-details-marker {display:none}
+.ns-workspace-view-menu summary::after,.ns-ws-header-help summary::after {content:'⌄';margin-left:7px;opacity:.6}
+.ns-workspace-view-options,.ns-ws-help-content {position:absolute;z-index:30;right:0;top:calc(100% + 8px);padding:10px;width:210px;border:1px solid var(--ns-line,#cdd4ca);border-radius:4px;background:var(--ns-paper,#f8f7f1);box-shadow:0 8px 30px #26332f20}
+.ns-workspace-view-options {display:flex;flex-direction:column;gap:5px}
+.ns-workspace-view-options>button {font:inherit;text-align:left;padding:9px 11px;min-height:36px;border:0;border-radius:3px;background:transparent;color:inherit;cursor:pointer}
+.ns-workspace-view-options>button:hover:not(:disabled),.ns-workspace-view-options>button[aria-pressed=true] {background:#e3e9e1}
+.ns-workspace-view-options>button:disabled {opacity:.45;cursor:not-allowed}
+.ns-ws-header-help summary {padding:9px 7px;min-height:36px;color:var(--ns-muted)}
+.ns-ws-header-help .ns-ws-help-content {width:340px;max-width:calc(100vw - 30px);padding:15px 17px;font-size:12px;line-height:1.8;color:var(--ns-ink)}
+.ns-ws-help-content p {margin:0}
+.ns-ws-help-content p+p {margin-top:9px;color:var(--ns-muted)}
+.ns-workspace-header details summary:focus-visible,.ns-workspace-header .ns-magnifier-controls button:focus-visible,.ns-workspace-header .ns-magnifier-controls select:focus-visible {outline:2px solid var(--ns-accent);outline-offset:3px}
+@media(max-width:1000px){.ns-workspace-header .ns-magnifier-controls select{display:none}.ns-workspace-header .ns-magnifier-controls button{font-size:11px;padding-inline:8px}.ns-node-workspace.has-shared-header{padding:12px}.ns-node-workspace.has-shared-header.ns-ws-workbench .ns-ws-body{grid-template-columns:minmax(0,1fr) 290px;gap:12px}}
+@media(max-width:840px){.ns-node-workspace.has-shared-header.ns-ws-workbench .ns-ws-body{grid-template-columns:1fr}.ns-node-workspace.has-shared-header .ns-ws-preview>img{max-height:60dvh}.ns-workspace-legacy-actions{gap:4px}.ns-workspace-header .ns-proximity-sensor{flex-basis:auto}.ns-workspace-header .ns-ws-header-help{display:none}}

@@ -1,6 +1,7 @@
-/* Observe explicit generation jobs. This module never submits, retries or adopts
- * an image request. A returned image remains a candidate until the user adopts it.
- */
+/* Observe explicit jobs without submitting or retrying requests. Successful images
+ * become the current result; node history retains the previous image. */
+import { adoptImageResult, settledImageOutput, failedImageResult } from './image-results.js';
+import { markAfter } from './graph.js';
 const ACTIVE = new Set(['queued', 'running', 'pending', 'processing']);
 const SUCCEEDED = new Set(['succeeded', 'success', 'completed', 'complete']);
 const FAILED = new Set(['failed', 'error', 'interrupted', 'cancelled', 'canceled']);
@@ -94,7 +95,7 @@ export class GenerationTracker {
       if (node.output?.kind !== 'generation_job' || node.output.jobId !== jobId
           || !ACTIVE.has(node.output.jobStatus || node.output.status || node.status)) continue;
       const before = JSON.stringify({output: node.output, status: node.status});
-      const output = node.output;
+      let output = node.output;
       const amount = progress(job.progress);
       if (amount !== undefined) output.progress = amount;
       output.jobStatus = status;
@@ -102,26 +103,31 @@ export class GenerationTracker {
       if (SUCCEEDED.has(status)) {
         const candidate = localImage(job.outputUrl || job.previewUrl || job.result?.url);
         if (!candidate) {
-          output.jobStatus = 'invalid_result';
-          output.message = '任务返回的图片地址无效，未采用任何结果；请检查任务记录。';
-          node.status = 'failed'; invalidResult = true;
+          output = failedImageResult(output, 'invalid_result', '任务返回的图片地址无效，之前的结果已保留');
+          node.output = output; node.status = 'failed'; invalidResult = true;
         } else {
-          output.candidateImageUrl = candidate;
-          output.candidateReference = {url: candidate, jobId, generated: true,
+          const reference = {url: candidate, jobId, generated: true,
             projectId: job.projectId || output.projectId, projectRevision: job.projectRevision || output.projectRevision};
-          if (job.usage && typeof job.usage === 'object') output.usage = copy(job.usage);
-          output.progress = 1;
-          output.message = '新图片已返回，等待你比较并采用；当前画面仍保留原版。';
           olderInput ||= node.status === 'stale';
-          output.candidateBasedOnOlderInput = node.status === 'stale';
-          // An upstream change remains visible; a completed job does not make
-          // its older inputs current again.
-          if (node.status !== 'stale') node.status = 'ready';
+          const wasStale = node.status === 'stale';
+          const previous = settledImageOutput(output);
+          node.versions ||= [];
+          if (previous.imageUrl && node.versions.at(-1)?.output?.imageUrl !== previous.imageUrl) {
+            node.versions.push({id: `result-${jobId}`, output: previous, savedAt: new Date().toISOString(), source: 'generation_previous'});
+          }
+          node.versions = node.versions.slice(-30);
+          output = adoptImageResult(output, candidate, reference);
+          output.jobStatus = 'succeeded'; output.progress = 1;
+          output.basedOnOlderInput = wasStale;
+          if (job.usage && typeof job.usage === 'object') output.usage = copy(job.usage);
+          if (wasStale) output.message = '新结果已显示，但上游在生成期间发生了变化';
+          node.output = output; node.status = wasStale ? 'stale' : 'succeeded';
+          markAfter(next, node.id);
           finished = true;
         }
       } else if (FAILED.has(status)) {
         node.status = status === 'interrupted' ? 'interrupted' : 'failed';
-        output.message ||= '图像任务未完成；没有自动重试。';
+        node.output = failedImageResult(output, status, job.message || '图像任务未完成；没有自动重试');
         finished = true;
       } else if (node.status !== 'stale') node.status = 'running';
       if (before !== JSON.stringify({output: node.output, status: node.status})) updated.push(node);
@@ -133,7 +139,7 @@ export class GenerationTracker {
     if (!this.active || this.epoch !== epoch || this.getWorkflow()?.id !== workflowId) return;
     for (const node of updated) this.onUpdate(node.id, copy(node.output));
     if (invalidResult) this.notify('返回的图像地址无效，结果未被采用。');
-    else if (finished && SUCCEEDED.has(status)) this.notify(olderInput ? '新图片已返回，但基于修改前的输入。请比较后决定是否采用。' : '新图片已返回。进入图像生成节点比较，满意后再采用。');
+    else if (finished && SUCCEEDED.has(status)) this.notify(olderInput ? '新结果已显示；上游已有变化，旧版仍可切回' : '新结果已显示，之前的方案保留在版本入口');
     else if (finished) this.notify('图像任务未完成，已保留原画面与任务记录，没有自动重试。');
   }
 }

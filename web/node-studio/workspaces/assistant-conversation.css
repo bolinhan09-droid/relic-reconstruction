@@ -1,0 +1,45 @@
+.ns-assistant-v116 { height:100%; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
+.ns-assistant-v116 .ns-ws-body { flex:1; min-height:0; display:block !important; overflow:hidden; }
+.ns-assistant-v116 .ns-ws-saved-output { display:none !important; }
+.ns-assistant-v116 .ns-assistant-bench { display:grid; grid-template-columns:minmax(0,1fr) 360px; height:100%; min-height:0; gap:18px; }
+.ns-assistant-v116 .ns-assistant-stage { min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; background:var(--ws-canvas,#e9e7df); }
+.ns-assistant-v116 .ns-assistant-target { flex:0 0 44px; display:flex; flex-direction:row; align-items:center; justify-content:space-between; gap:10px; padding:0 12px; border-bottom:1px solid var(--ws-line,#d2d4c9); }
+.ns-assistant-v116 .ns-assistant-target strong { font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ns-assistant-v116 .ns-assistant-versions { flex:0 0 134px; min-height:30px; height:30px; padding:3px 7px; font-size:12px; }
+.ns-assistant-v116 .ns-assistant-image-host { flex:1; min-height:0; min-width:0; display:flex; align-items:stretch; justify-content:center; overflow:hidden; }
+.ns-assistant-v116 .ns-assistant-image-host .ns-ws-preview { flex:1; min-height:0; display:flex; flex-direction:column; align-items:center; margin:0; overflow:hidden; }
+.ns-assistant-v116 .ns-ws-preview img { min-height:0; flex:1; width:100%; object-fit:contain; }
+.ns-assistant-v116 .ns-ws-preview figcaption { flex:0 0 26px; }
+.ns-assistant-v116 .ns-ws-selection-board { min-height:0; min-width:0; flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.ns-assistant-v116 .ns-ws-canvas-wrap { min-height:0; min-width:0; flex:1; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+.ns-assistant-v116 .ns-ws-canvas-wrap canvas { width:auto !important; height:auto; max-width:100%; max-height:100%; object-fit:contain; }
+.ns-assistant-v116 .ns-assistant-stage > .ns-ws-actions { flex:0 0 40px; margin:0; padding:4px 8px; align-items:center; }
+.ns-assistant-v116 .ns-assistant-stage > .ns-ws-actions .ns-button { min-height:28px; padding:4px 8px; font-size:12px; }
+.ns-assistant-v116 .ns-assistant-stage > .ns-ws-actions small { font-size:11px; opacity:.7; }
+.ns-assistant-v116 .ns-assistant-dialogue { min-height:0; min-width:0; display:grid; grid-template-rows:auto minmax(0,1fr) auto; gap:0; overflow:hidden; scrollbar-gutter:auto; padding:0; border:1px solid var(--ws-line,#d2d4c9); }
+.ns-assistant-v116 .ns-assistant-tabs { display:flex; gap:3px; align-items:center; padding:5px; border-bottom:1px solid var(--ws-line,#d2d4c9); }
+.ns-assistant-v116 .ns-assistant-tabs button { flex:1; min-height:31px; border:0; background:transparent; color:inherit; font:inherit; font-size:12px; cursor:pointer; white-space:nowrap; }
+.ns-assistant-v116 .ns-assistant-tabs button[aria-selected=true] { background:var(--ws-paper,#f2efe5); box-shadow:inset 0 -2px var(--ws-accent,#a74133); }
+.ns-assistant-v116 .ns-assistant-panel-host { min-height:0; overflow:hidden; }
+.ns-assistant-v116 .ns-assistant-panel { height:100%; min-height:0; display:flex; flex-direction:column; gap:8px; padding:12px; overflow:hidden; box-sizing:border-box; }
+.ns-assistant-v116 .ns-assistant-panel[hidden] { display:none; }
+.ns-assistant-v116 .ns-assistant-panel .ns-ws-field { min-height:0; }
+.ns-assistant-v116 .ns-assistant-panel textarea { min-height:60px; max-height:240px; resize:none; }
+.ns-assistant-v116 .ns-assistant-panel > small { font-size:12px; opacity:.7; }
+.ns-assistant-v116 .ns-assistant-transcript { flex:1; min-height:0; max-height:none; overflow:hidden; scrollbar-gutter:auto; padding:0; line-height:1.7; font-size:13px; }
+.ns-assistant-v116 .ns-assistant-speaker { display:block; font-size:12px; margin-bottom:7px; color:var(--ws-accent,#a74133); }
+.ns-assistant-v116 .ns-assistant-message { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; line-height:23px; font-size:13px; }
+.ns-assistant-v116 .ns-assistant-applied { display:block; font-size:11px; margin-top:7px; opacity:.7; }
+.ns-assistant-v116 .ns-assistant-dialogue-pager { flex:0 0 30px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.ns-assistant-v116 .ns-assistant-dialogue-pager .ns-button { min-height:28px; font-size:11px; padding:3px 7px; }
+.ns-assistant-v116 .ns-assistant-dialogue-pager small { font-size:11px; opacity:.7; }
+.ns-assistant-v116 .ns-assistant-composer { border-top:1px solid var(--ws-line,#d2d4c9); padding:12px; }
+.ns-assistant-v116 .ns-assistant-composer .ns-ws-field { margin:0; }
+.ns-assistant-v116 .ns-assistant-composer label { font-size:12px; }
+.ns-assistant-v116 .ns-assistant-composer textarea { height:78px; min-height:0; resize:none; }
+.ns-assistant-v116 .ns-assistant-progress { min-height:16px; max-height:32px; margin:7px 0; overflow:hidden; font-size:11px; opacity:.75; }
+.ns-assistant-v116 .ns-assistant-composer .ns-ws-actions { margin:0; }
+.ns-assistant-v116 .ns-assistant-composer .is-primary { flex:1; }
+.ns-assistant-v116 > .ns-ws-status { flex:0 0 auto; margin:4px 0 0; max-height:32px; overflow:hidden; }
+@media(max-width:1100px) { .ns-assistant-v116 .ns-assistant-bench { grid-template-columns:minmax(0,1fr) 310px; gap:10px; } }
+@media(max-height:760px) { .ns-assistant-v116 .ns-assistant-composer { padding:9px; } .ns-assistant-v116 .ns-assistant-composer textarea { height:64px; } .ns-assistant-v116 .ns-assistant-panel textarea { max-height:170px; } }

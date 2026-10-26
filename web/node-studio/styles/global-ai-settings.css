@@ -1,0 +1,26 @@
+.ns-global-ai-dialog{width:min(660px,calc(100vw - 40px));max-height:calc(100dvh - 64px);padding:0;border:1px solid var(--ns-line);border-radius:4px;background:var(--ns-paper,#f7f6f0);color:var(--ns-ink,#263333);box-shadow:0 20px 90px #182b2c35;overflow:auto}
+.ns-global-ai-dialog::backdrop{background:#24333266;backdrop-filter:blur(3px)}
+.ns-global-ai-dialog>header{display:flex;justify-content:space-between;align-items:center;gap:24px;padding:24px 28px 18px;border-bottom:1px solid var(--ns-line)}
+.ns-global-ai-dialog h2{margin:0;font-size:24px;line-height:1.35}
+.ns-global-ai-dialog header p{margin:7px 0 0;font-size:13px;color:var(--ns-muted)}
+.ns-global-ai-tabs{display:flex;gap:6px;padding:16px 28px 0}
+.ns-global-ai-tabs button{flex:1;min-height:44px;border:0;border-bottom:2px solid transparent;background:transparent;font:inherit;color:var(--ns-muted);cursor:pointer}
+.ns-global-ai-tabs button[aria-selected=true]{color:var(--ns-ink);border-color:var(--ns-accent);font-weight:600}
+.ns-global-ai-dialog :focus-visible{outline:2px solid var(--ns-accent);outline-offset:3px}
+.ns-global-ai-panels{padding:20px 28px 4px}
+.ns-global-ai-panels .ns-ws-field{margin-bottom:15px}
+.ns-global-ai-panels .ns-ws-details{padding:12px 0;background:transparent}
+.ns-global-ai-panels .ns-ws-details summary{cursor:pointer;margin-bottom:10px}
+.ns-global-ai-panels .ns-assistant-service{border:0;padding:0}
+.ns-global-ai-dialog>.ns-ws-status{padding:0 28px 18px;margin:0;min-height:22px}
+.ns-global-ai-panels .ns-input{box-sizing:border-box;width:100%;min-height:42px}
+.ns-global-ai-panels input[type=checkbox]{width:auto;min-height:0}
+.ns-global-ai-panels .ns-ws-field>label{display:block;margin-bottom:7px;font-size:13px}
+.ns-global-ai-panels .ns-ws-notice{font-size:12px;line-height:1.65;color:var(--ns-muted)}
+.ns-global-ai-panels .ns-ws-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.ns-ai-connection{padding:11px 0;border-bottom:1px solid var(--ns-line);font-size:12px;margin-bottom:12px}
+.ns-ai-connection-row,.ns-ai-connection:has(> .ns-ai-connection-status){display:flex;gap:12px;align-items:center;justify-content:space-between}
+.ns-ai-connection .ns-ws-actions{margin:0}
+.ns-ai-connection .ns-ws-details{margin-top:8px}
+.ns-ai-connection-status{line-height:1.6;color:var(--ns-muted)}
+@media(max-width:600px){.ns-global-ai-dialog>header,.ns-global-ai-panels{padding-left:18px;padding-right:18px}.ns-global-ai-tabs{padding-left:18px;padding-right:18px}.ns-global-ai-dialog{max-height:calc(100dvh - 24px)}}

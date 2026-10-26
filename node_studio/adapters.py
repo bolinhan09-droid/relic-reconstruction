@@ -15,9 +15,9 @@ from pathlib import Path
 from PIL import Image, ImageOps
 
 from .catalog import BY_TYPE
-from .fabrication import export_stencil
-from .graph import preceding_ids, branches_for, merge_for, merge_candidates
+from .graph import preceding_ids, branches_for, merge_for, merge_candidates, host_for
 from .store import bounded_copy, fail, now, safe_id
+from .text_inputs import text_input
 
 
 def _nodes(workflow):
@@ -36,16 +36,41 @@ def preceding_nodes(workflow, node):
     return [by_id[identifier] for identifier in preceding_ids(workflow, node["id"])]
 
 
-def garment_asset(workflow):
-    garment = next((entry for entry in workflow["nodes"] if entry["type"] == "garment_input"), None)
+def input_node(workflow, node=None):
+    """Return the nearest route input, never an unrelated project's garment."""
+    by_id = _nodes(workflow)
+    if node is None:
+        return by_id.get(next(iter(workflow.get("order", [])), None))
+    host = host_for(workflow, node["id"])
+    scope = preceding_nodes(workflow, node) + ([host] if host else []) + [node]
+    return next((entry for entry in reversed(scope) if entry["type"] in {"garment_input", "image_reference"}), None)
+
+
+def garment_asset(workflow, node=None):
+    garment = input_node(workflow, node)
+    if not garment or garment["type"] != "garment_input":
+        fail("当前路线需要真实服装输入；参考图不能作为实物或尺寸依据")
     params = (garment or {}).get("params", {})
     asset = params.get("front") or params.get("reference") or params.get("asset")
     if not asset and isinstance(params.get("references"), list) and params["references"]:
         asset = params["references"][0]
-    if not asset:
+    if not asset and node is None:
         asset = next((entry for entry in workflow.get("assets", []) if entry.get("url")), None)
     if not isinstance(asset, dict) or not isinstance(asset.get("url"), str):
         fail("请先在服装输入中上传真实衣服正面照片")
+    return bounded_copy(asset)
+
+
+def reference_asset(node):
+    params = node.get("params", {})
+    references = params.get("references", [])
+    index = params.get("activeReferenceIndex", 0)
+    if (not isinstance(references, list) or not references or len(references) > 20
+            or isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < len(references)):
+        fail("请上传参考图片，并选择本路线使用的图片")
+    asset = references[index]
+    if not isinstance(asset, dict) or not isinstance(asset.get("url"), str):
+        fail("参考素材须为上传记录")
     return bounded_copy(asset)
 
 
@@ -64,19 +89,48 @@ def local_image_path(core, url):
 
 
 def current_base(core, workflow, node):
-    asset = garment_asset(workflow)
-    local_image_path(core, asset["url"])
-    inherited = {"imageUrl": asset["url"], "originalImageUrl": asset["url"], "garmentSource": asset}
-    for preceding in preceding_nodes(workflow, node):
-        if preceding["type"] in {"branch_create", "branch_merge"}:
-            continue
+    inherited = None
+    scope = preceding_nodes(workflow, node)
+    host = host_for(workflow, node["id"])
+    if host:
+        scope += [host]
+    if node["type"] in {"garment_input", "image_reference"}:
+        scope += [node]
+    for preceding in scope:
         output = preceding.get("output") or {}
+        if preceding["type"] in {"branch_create", "branch_merge", "intent_assist", "design_advice", "design_review"}:
+            continue
+        if preceding["type"] in {"garment_input", "image_reference"}:
+            role = "garment" if preceding["type"] == "garment_input" else "reference"
+            asset = garment_asset(workflow, preceding) if role == "garment" else reference_asset(preceding)
+            local_image_path(core, asset["url"])
+            inherited = {"imageUrl": asset["url"], "originalImageUrl": asset["url"],
+                         "sourceRole": role, "sourceNodeId": preceding["id"]}
+            inherited["garmentSource" if role == "garment" else "referenceSource"] = asset
+            # An adopted assistant result on an input is usable, but only
+            # while its binding still belongs to the currently selected photo.
+            bound_url = output.get("originalImageUrl") or output.get("sourceImageUrl") or output.get("imageUrl")
+            if bound_url != asset["url"]:
+                continue
         if output.get("imageUrl"):
             local_image_path(core, output["imageUrl"])
+            inherited = inherited or {"imageUrl": output["imageUrl"],
+                "originalImageUrl": output.get("originalImageUrl") or output["imageUrl"],
+                "sourceRole": "detached"}
             for key in ("imageUrl", "projectId", "view", "mappingId", "parts", "task"):
                 if output.get(key) is not None:
                     inherited[key] = copy.deepcopy(output[key])
             inherited["sourceNodeId"] = preceding["id"]
+    # A detached completed card can be reopened and extended without losing
+    # its saved result. It does not inherit material claims from another root.
+    if inherited is None and not scope and (node.get("output") or {}).get("imageUrl"):
+        output = node["output"]
+        local_image_path(core, output["imageUrl"])
+        inherited = {key: copy.deepcopy(output[key]) for key in ("imageUrl", "projectId", "view", "mappingId", "parts", "task") if key in output}
+        inherited.update(originalImageUrl=output.get("originalImageUrl") or output["imageUrl"],
+                         sourceRole="detached", sourceNodeId=node["id"])
+    if inherited is None:
+        fail("当前路线没有图片，请连接服装输入或图片参考")
     return inherited
 
 
@@ -101,7 +155,9 @@ def context_for(workflow, node):
                 if isinstance(character, dict) and isinstance(scene, dict) and scene.get("id"):
                     # An adopted scene belongs to the photo that was identified.
                     # Browsing new candidates must not silently re-label a different garment.
-                    current_url = garment_asset(workflow).get("url")
+                    origin = input_node(workflow, attached)
+                    current_url = ((reference_asset(origin) if origin["type"] == "image_reference"
+                                    else garment_asset(workflow, origin)).get("url") if origin else None)
                     for prior in preceding_nodes(workflow, attached):
                         current_url = (prior.get("output") or {}).get("imageUrl") or current_url
                     owner_id = _owner(workflow, attached["id"])
@@ -163,10 +219,10 @@ def _text(value, maximum=4000):
     return json.dumps(value, ensure_ascii=False)[:maximum]
 
 
-def _prompt(node, context):
+def _prompt(node, context, inherited_intent=None):
     params = node.get("params", {})
     scene, production = context.get("scene", {}), context.get("production", {})
-    intent = _text(params.get("intent") or params.get("prompt") or params.get("idea"))
+    intent = inherited_intent if inherited_intent is not None else _text(params.get("intent") or params.get("prompt") or params.get("idea"))
     lines = ["保持真实服装廓形、人物身份、姿态、背景及关键装饰，只探索衣物战损外观。",
              "用户想法：" + (intent or "先提出一版清楚可辨、不过度堆叠的衣物战损方案。")]
     if scene:
@@ -184,8 +240,11 @@ def _prompt(node, context):
 def _task(core, workflow, node):
     params, context = node["params"], context_for(workflow, node)
     base = current_base(core, workflow, node)
-    task = {"type": node["type"], "intent": _text(params.get("intent") or params.get("prompt")),
-            "prompt": _prompt(node, context), "context": context, "preparedAt": now(),
+    brief = text_input(workflow, node)
+    if brief["stale"]:
+        fail("上游文字已修改，请先更新对应节点的输出")
+    task = {"type": node["type"], "intent": brief["combinedText"],
+            "prompt": _prompt(node, context, brief["combinedText"]), "textSources": brief["sources"], "context": context, "preparedAt": now(),
             "apiRequest": False, "semanticAI": False}
     if node["type"] == "region_generate":
         regions = params.get("regions", [])
@@ -273,7 +332,8 @@ def ensure_project(core, workflow, node, base, task=None):
                    reversibleRequired=production.get("reversibleRequired", "unknown"),
                    material=production.get("materialKind", "unknown"),
                    nodeStudioOrigin={"workflowId": workflow["id"], "nodeId": node["id"],
-                                     "originalImageUrl": garment_asset(workflow)["url"],
+                                     "originalImageUrl": base.get("originalImageUrl") or base["imageUrl"],
+                                     "sourceRole": base.get("sourceRole", "unknown"),
                                      "inputImageUrl": base["imageUrl"], "context": context})
     if task and task.get("regions"):
         payload["damageItems"] = [{"id": f"node-region-{i+1}", "type": "blood", "rect": region,
@@ -325,7 +385,7 @@ class _CoreView:
 
 def _generate(core, workflow, node, payload, request):
     params = node["params"]
-    provider = params.get("provider") or payload.get("provider")
+    provider = params.get("provider") or payload.get("provider") or core.cloud_provider.public_settings().get("provider")
     local = provider == "local_openai" or params.get("mode") == "local"
     if not local and payload.get("confirmedExternal") is not True:
         fail("请明确确认调用在线图像接口；连接节点或保存配置不会自动生成，也不会扣费", 409)
@@ -336,10 +396,16 @@ def _generate(core, workflow, node, payload, request):
     last_task = max((index for index, entry in enumerate(preceding) if (entry.get("output") or {}).get("task")), default=-1)
     if last_merge > last_task:
         fail("当前合拢包含多个方案，请先接入融合创作并准备融合任务，再生成图片")
-    tasks = [entry.get("output", {}).get("task") for entry in preceding if entry.get("output")]
-    task = next((value for value in reversed(tasks) if value), None)
-    if not task and not params.get("intent"):
-        fail("请先准备快速生成、局部选区或融合任务，或填写本次精修要求")
+    brief = text_input(workflow, node)
+    if brief["stale"]:
+        fail("上游文字已修改，请先更新对应节点的输出，再生成图片", 409)
+    if not brief["combinedText"] and params.get("mode") == "brush":
+        brief["combinedText"] = "保留已保存笔触的位置与形态，将痕迹自然融合到服装的光影和材质中"
+    if not brief["combinedText"]:
+        fail("请连接想法整理的文字输出、准备创作任务，或填写本次补充")
+    task = copy.deepcopy(brief["task"] or {"type": "quick_create"})
+    task.update(prompt=_prompt(node, context_for(workflow, node), brief["combinedText"]),
+                intent=brief["combinedText"], textSources=brief["sources"])
     if task and task.get("type") == "blend_create":
         index = task["candidateIds"].index(task["baseNodeId"])
         base["imageUrl"] = task["candidateImages"][index]
@@ -349,6 +415,13 @@ def _generate(core, workflow, node, payload, request):
         else:
             base.pop("projectId", None)
     project = ensure_project(core, workflow, node, base, task)
+    source_id = task.get("baseNodeId") if task.get("type") == "blend_create" else base.get("sourceNodeId")
+    source_output = (_nodes(workflow).get(source_id) or {}).get("output") or {}
+    source_snapshot = source_output.get("projectSnapshot") or source_output.get("originalProjectSnapshot")
+    source_snapshot = source_snapshot or project
+    source_marks = source_output.get("brushStrokes") or source_output.get("sourceBrushStrokes") or source_snapshot.get("brushStrokes", [])
+    generation_source = {"imageUrl": base["imageUrl"], "sourceNodeId": source_id,
+                         "brushStrokes": copy.deepcopy(source_marks), "projectSnapshot": copy.deepcopy(source_snapshot)}
     view = _CoreView(core, params)
     from quick_draft import create_draft_job
     from brush_workflow import create_brush_job
@@ -372,7 +445,20 @@ def _generate(core, workflow, node, payload, request):
         job = region_job(core, view, project, provider)
     else:
         job = create_draft_job(view, project["id"], {"projectRevision": project["revision"], "provider": provider}, request)
-    return {**base, "kind": "generation_job", "projectId": project["id"], "projectRevision": project["revision"],
+    # A repeated attempt must not replace the displayed image with its upstream
+    # input while queued, or lose the last successful image if the request fails.
+    displayed = copy.deepcopy(node.get("output") or {})
+    if not displayed.get("imageUrl"):
+        displayed = copy.deepcopy(base)
+    for key in ("candidateImageUrl", "candidateReference", "candidateBasedOnOlderInput", "requiresExplicitAdoption"):
+        displayed.pop(key, None)
+    # Display and provenance have different owners during an in-flight attempt:
+    # keep the prior result intact, while capturing the source actually submitted.
+    previous_output = copy.deepcopy(displayed.get("generationPreviousOutput") or displayed)
+    for key in ("generationSource", "generationPreviousOutput"):
+        previous_output.pop(key, None)
+    return {**displayed, "kind": "generation_job", "projectId": project["id"], "projectRevision": project["revision"],
+            "generationPreviousOutput": previous_output, "generationSource": generation_source,
             "jobId": job["id"], "jobStatus": job["status"], "jobUrl": f"/api/jobs/{job['id']}",
             "message": job.get("message", "任务已排队"), "apiRequest": not local,
             "status": "running", "contextSnapshot": context_for(workflow, node), "usage": job.get("usage")}
@@ -396,6 +482,7 @@ def _review(core, workflow, node):
 
 def _guide(core, workflow, node):
     base, context = current_base(core, workflow, node), context_for(workflow, node)
+    garment_asset(workflow, node)
     production = context.get("production", {})
     project = core.get_project(base["projectId"]) if base.get("projectId") else {"damageItems": [], "brushStrokes": []}
     steps = core.instructions(project)
@@ -421,20 +508,25 @@ def run_node(core, workflow, node, payload, request):
     if BY_TYPE[kind]["capability"] == "planned":
         return {"kind": "not_implemented", "implemented": False, "message": "该概念入口已保留，当前尚未接入真实运行能力。", "status": "planned"}
     if kind == "garment_input":
-        asset = garment_asset(workflow)
+        asset = garment_asset(workflow, node)
         local_image_path(core, asset["url"])
         return {"kind": "garment", "imageUrl": asset["url"], "originalImageUrl": asset["url"],
-                "front": asset, "back": params.get("back"), "flat": params.get("flat"), "view": "worn",
+                "front": asset, "back": params.get("back"), "flat": params.get("flat"), "view": "worn", "sourceRole": "garment",
                 "message": "真实服装原图已保留；未执行自动识别或生成。", "apiRequest": False}
     if kind == "image_reference":
         references = params.get("references", [])
-        if not isinstance(references, list) or not references or len(references) > 20:
-            fail("请上传 1–20 张参考图片")
+        if not isinstance(references, list) or len(references) > 20:
+            fail("最多保留 20 张参考图片")
+        if not references:
+            return {"kind": "reference", "references": [], "activeReferenceIndex": 0,
+                    "sourceRole": "reference", "apiRequest": False}
         for asset in references:
             if not isinstance(asset, dict):
                 fail("参考素材须为上传记录")
             local_image_path(core, asset.get("url"))
-        return {"kind": "reference", "imageUrl": references[0]["url"], "references": references,
+        active = reference_asset(node)
+        return {"kind": "reference", "imageUrl": active["url"], "originalImageUrl": active["url"], "references": references,
+                "activeReferenceIndex": params.get("activeReferenceIndex", 0), "sourceRole": "reference",
                 "message": "参考已保存，不作为真实衣物或尺寸依据。", "apiRequest": False}
     if kind in {"scene_context", "production_context", "character_research"}:
         return {**current_base(core, workflow, node), "kind": "context", "context": copy.deepcopy(params),
@@ -467,6 +559,8 @@ def run_node(core, workflow, node, payload, request):
         return _generate(core, workflow, node, payload, request)
     if kind in {"precision_edit", "flatten_map"}:
         base = current_base(core, workflow, node)
+        if kind == "flatten_map":
+            garment_asset(workflow, node)
         project = ensure_project(core, workflow, node, base)
         workspace = {"precision_edit": "brush", "garment_split": "regions", "flatten_map": "mapping"}[kind]
         return {**base, "kind": "workspace", "projectId": project["id"], "projectRevision": project["revision"],
@@ -484,16 +578,6 @@ def run_node(core, workflow, node, payload, request):
     if kind == "production_guide":
         return _guide(core, workflow, node)
     if kind == "stencil_export":
-        base = current_base(core, workflow, node)
-        garment = next(entry for entry in workflow["nodes"] if entry["type"] == "garment_input")
-        flat = params.get("flat") or garment["params"].get("flat")
-        if not isinstance(flat, dict) or not flat.get("url"):
-            fail("制作模板前请上传真实平铺照片，并确认镂空区域对应的位置")
-        local_image_path(core, flat["url"])
-        folder = Path(core.DATA) / "node-studio" / "exports" / workflow["id"] / node["id"] / ("export-" + uuid.uuid4().hex[:12])
-        receipt = export_stencil(params, folder, workflow["title"])
-        files = [{"label": label, "url": core.data_url(folder / filename)} for label, filename in
-                 (("SVG 模板", "stencil.svg"), ("DXF 轮廓", "stencil.dxf"), ("尺度与定位记录", "calibration.json"))]
-        return {**base, "kind": "fabrication", "files": files, "downloadUrl": files[0]["url"],
-                "receipt": receipt, "flatImageUrl": flat["url"], "message": "按用户确认的毫米尺寸输出局部镂空模板；不是自动服装裁片或材料物理模拟。", "apiRequest": False}
+        from .making_bridge import generate_kit
+        return generate_kit(core, workflow, node)
     fail("节点执行器尚未登记", 501)

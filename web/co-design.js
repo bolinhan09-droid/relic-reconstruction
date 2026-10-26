@@ -164,47 +164,55 @@
     finally{runtime.researchBusy=false;refreshAssistant();}
   }
   function openConnection(providerOverride) {
+    if (global.parent !== global && new URLSearchParams(location.search).get('nodeEmbed') === '1') {
+      global.parent.postMessage({type:'relic-open-ai-settings',section:'assistant'},location.origin);
+      return;
+    }
     let dialog=q('#coConnectionDialog');
     if(!dialog){dialog=document.createElement('dialog');dialog.id='coConnectionDialog';dialog.className='co-dialog';document.body.append(dialog);}
+    const presets={deepseek:{baseUrl:'https://api.deepseek.com/v1',model:'deepseek-flash',vision:true},local_openai:{baseUrl:'http://127.0.0.1:8188/v1',model:'qwen3.5-4b-local',vision:true},openai_compatible:{baseUrl:'',model:'',vision:false}};
     const current=runtime.connection||{};
-    const c=providerOverride&&providerOverride!==current.provider?{provider:providerOverride}:current;
+    const selected=typeof providerOverride==='string'&&presets[providerOverride]?providerOverride:current.provider||'deepseek';
+    const c={provider:selected,...presets[selected],...(selected===current.provider?current:{})};
     const local=c.provider==='local_openai';
-    dialog.innerHTML=`<form id="coConnectionForm"><header><div><h2>共创助手</h2><p class="co-note">本机对话、云端对话与图像编辑分别设置。</p></div><button type="button" id="coConnectionClose" class="co-icon-button" aria-label="关闭助手设置">×</button></header>
-      <div class="co-field"><label for="coAssistantProvider">对话服务</label><select id="coAssistantProvider"><option value="deepseek" ${c.provider==='deepseek'?'selected':''}>DeepSeek · 云端对话</option><option value="openai_compatible" ${c.provider==='openai_compatible'?'selected':''}>兼容接口 · 云端对话</option><option value="local_openai" ${local?'selected':''}>本机对话 · Ollama / LM Studio</option></select></div>
-      <div class="co-field"><label for="coAssistantBase">接口地址</label><input id="coAssistantBase" type="url" maxlength="2000" value="${esc(c.baseUrl||(local?'http://127.0.0.1:11434/v1':'https://api.deepseek.com/v1'))}" required placeholder="${local?'http://127.0.0.1:11434/v1':'https://服务地址/v1'}"><small id="coAssistantBaseHint">${local?'只接收本机 loopback 地址。Ollama 通常使用 11434，LM Studio 通常使用 1234。':'只填写你确认可信的 HTTPS 服务地址。'}</small></div>
-      <div class="co-field"><label for="coAssistantModel">对话模型名称</label><input id="coAssistantModel" maxlength="160" value="${esc(c.model||(local?'':'deepseek-flash'))}" placeholder="${local?'填写本机服务实际已加载的对话模型 ID':''}" required><small>对话模型提供建议，不直接生成服装图片。</small></div>
-      <div class="co-field"><label for="coAssistantKey">API Key <span id="coAssistantKeyOptional">${local?'· 可选':''}</span></label><input id="coAssistantKey" type="password" autocomplete="off" spellcheck="false" maxlength="1024" placeholder="${local?'本机服务不要求时留空':c.hasKey?'已在本次运行中配置，留空保留':'粘贴对话服务提供的密钥'}"><small id="coAssistantKeyHint">${local?'不会沿用任何云端密钥。本机推理使用电脑资源，当前安装包不附带对话模型。':'仅用于当前运行，不保存到草稿。云端 API 服务可能单独计费。'}</small></div>
-      <details class="co-details"><summary>图片输入设置</summary><label class="co-radio"><input id="coAssistantVision" type="checkbox" ${c.vision?'checked':''}><span>此对话模型支持接收图片</span></label><p class="co-note">须先核对模型与服务的图片输入能力。开启后，聊天时仍由你选择是否发送服装照片；未开启时只发送文字和方案。</p></details>
-      <p id="coConnectionFeedback" class="co-note" role="status">${c.ready?'地址与模型已配置；尚未验证实际对话。':'保存设置不会安装、下载、启动模型或发起对话。'}</p><footer><button id="coClearConnection" type="button" class="button text-button">清除本次密钥</button><button id="coSaveConnection" class="button primary-button">保存助手设置</button></footer></form>`;
+    dialog.innerHTML=`<form id="coConnectionForm"><header><div><h2>共创助手</h2><p class="co-note">所有 AI 协作节点共用这组连接</p></div><button type="button" id="coConnectionClose" class="co-icon-button" aria-label="关闭助手设置">×</button></header>
+      <div class="co-field"><label for="coAssistantProvider">助手服务</label><select id="coAssistantProvider"><option value="deepseek" ${c.provider==='deepseek'?'selected':''}>DeepSeek · 官方服务</option><option value="openai_compatible" ${c.provider==='openai_compatible'?'selected':''}>其他兼容服务</option><option value="local_openai" ${local?'selected':''}>本机助手 · 千问 / Ollama / LM Studio</option></select></div>
+      <div class="co-field" id="coAssistantKeyGroup" ${local?'hidden':''}><label for="coAssistantKey">API Key</label><input id="coAssistantKey" type="password" autocomplete="off" spellcheck="false" maxlength="1024" placeholder="${c.hasKey?'已设置，留空保留本次密钥':'粘贴所选服务的 API Key'}"><small>密钥仅用于本次运行，不进入作品或导出文件</small></div>
+      <p id="coAssistantPresetHint" class="co-note" ${c.provider==='deepseek'?'':'hidden'}>已选官方视觉模型，只需粘贴 API Key</p>
+      <details class="co-details" id="coAssistantAdvanced" ${c.provider==='openai_compatible'?'open':''}><summary>高级设置</summary>
+        <div class="co-field"><label for="coAssistantBase">接口地址</label><input id="coAssistantBase" type="url" maxlength="2000" value="${esc(c.baseUrl)}" placeholder="https://服务地址/v1"><small>自定义服务需填写对应地址，本机服务使用 loopback 地址</small></div>
+        <div class="co-field"><label for="coAssistantModel">模型名称</label><input id="coAssistantModel" maxlength="120" value="${esc(c.model)}"><small>默认模型由平台填写，使用自定义服务时可修改</small></div>
+        <label class="co-radio"><input id="coAssistantVision" type="checkbox" ${c.vision?'checked':''}><span>启用图片理解</span></label><p class="co-note">开启后，聊天时仍可选择是否发送服装照片</p>
+      </details>
+      <p id="coConnectionFeedback" class="co-note" role="status">${c.ready?'连接已设置，首次执行时验证':'保存连接不会发起对话或产生调用费用'}</p><footer><button id="coClearConnection" type="button" class="button text-button">清除本次密钥</button><button id="coSaveConnection" class="button primary-button">保存连接</button></footer></form>`;
     const field=id=>q('#'+id,dialog);
     field('coConnectionClose').onclick=()=>dialog.close();
     dialog.onclose=()=>{field('coAssistantKey').value='';};
     field('coAssistantProvider').onchange=event=>{
-      const provider=event.target.value,isLocal=provider==='local_openai';
-      field('coAssistantBase').value=provider==='deepseek'?'https://api.deepseek.com/v1':isLocal?'http://127.0.0.1:11434/v1':'';
-      field('coAssistantBase').placeholder=isLocal?'http://127.0.0.1:11434/v1':'https://服务地址/v1';
-      field('coAssistantModel').value=provider==='deepseek'?'deepseek-flash':'';
-      field('coAssistantModel').placeholder=isLocal?'填写本机服务实际已加载的对话模型 ID':'';
-      field('coAssistantKey').value='';field('coAssistantKey').placeholder=isLocal?'本机服务不要求时留空':'粘贴所选对话服务提供的密钥';
-      field('coAssistantKeyOptional').textContent=isLocal?'· 可选':'';
-      field('coAssistantBaseHint').textContent=isLocal?'只接收本机 loopback 地址。Ollama 通常使用 11434，LM Studio 通常使用 1234。':'只填写你确认可信的 HTTPS 服务地址。';
-      field('coAssistantKeyHint').textContent=isLocal?'不会沿用任何云端密钥。本机推理使用电脑资源，当前安装包不附带对话模型。':'仅用于当前运行，不保存到草稿。云端 API 服务可能单独计费。';
-      field('coAssistantVision').checked=false;
-      field('coConnectionFeedback').textContent='保存设置不会安装、下载、启动模型或发起对话。';
+      const provider=event.target.value,isLocal=provider==='local_openai',preset=presets[provider];
+      field('coAssistantBase').value=preset.baseUrl;
+      field('coAssistantModel').value=preset.model;
+      field('coAssistantKey').value='';field('coAssistantKey').placeholder='粘贴所选服务的 API Key';
+      field('coAssistantKeyGroup').hidden=isLocal;
+      field('coAssistantPresetHint').hidden=provider!=='deepseek';
+      field('coAssistantAdvanced').open=provider==='openai_compatible';
+      field('coAssistantVision').checked=preset.vision;
+      field('coConnectionFeedback').textContent='保存连接不会发起对话或产生调用费用';
     };
     field('coConnectionForm').onsubmit=async event=>{
-      event.preventDefault();const button=field('coSaveConnection'),feedback=field('coConnectionFeedback'),keyField=field('coAssistantKey');button.disabled=true;feedback.textContent='正在保存助手设置…';
-      const payload={provider:field('coAssistantProvider').value,baseUrl:field('coAssistantBase').value.trim(),model:field('coAssistantModel').value.trim(),vision:field('coAssistantVision').checked};if(keyField.value.trim())payload.apiKey=keyField.value.trim();
-      try{runtime.connection=await api('/api/assistant/settings',{method:'POST',body:JSON.stringify(payload)});runtime.connectionError='';dialog.close();refreshAssistant();notice('共创助手设置已保存，尚未验证实际对话。');}
+      event.preventDefault();const button=field('coSaveConnection'),feedback=field('coConnectionFeedback'),keyField=field('coAssistantKey');button.disabled=true;feedback.textContent='正在保存连接…';
+      const provider=field('coAssistantProvider').value,preset=presets[provider];
+      const payload={provider,baseUrl:field('coAssistantBase').value.trim()||preset.baseUrl,model:field('coAssistantModel').value.trim()||preset.model,vision:field('coAssistantVision').checked};if(keyField.value.trim())payload.apiKey=keyField.value.trim();
+      try{runtime.connection=await api('/api/assistant/settings',{method:'POST',body:JSON.stringify(payload)});runtime.connectionError='';dialog.close();refreshAssistant();notice('连接已保存，首次执行时验证');}
       catch(error){feedback.textContent=error.message;}
       finally{keyField.value='';delete payload.apiKey;button.disabled=false;global.dispatchEvent(new Event('models:settings-changed'));}
     };
     field('coClearConnection').onclick=async()=>{
       field('coAssistantKey').value='';
-      try{runtime.connection=await api('/api/assistant/settings?provider='+encodeURIComponent(field('coAssistantProvider').value),{method:'DELETE'});field('coConnectionFeedback').textContent='本次运行中该服务的密钥已清除。';refreshAssistant();}
+      try{runtime.connection=await api('/api/assistant/settings?provider='+encodeURIComponent(field('coAssistantProvider').value),{method:'DELETE'});field('coConnectionFeedback').textContent='本次运行中该服务的密钥已清除';refreshAssistant();}
       catch(error){field('coConnectionFeedback').textContent=error.message;}
     };
-    dialog.showModal();field('coAssistantProvider').focus();
+    dialog.showModal();field(local?'coAssistantProvider':'coAssistantKey').focus();
   }
   function craftGroups() {
     const previous=list(state.makingDesignHistory),currentStrokes=state.brushStrokes,currentItems=state.damageItems;
@@ -258,5 +266,9 @@
     const link=document.createElement('a');link.href=url;link.download=(state.title||'我的方案')+'-制作清单.html';document.body.append(link);link.click();link.remove();notice('制作清单已下载，打开后可打印或另存为 PDF。');
     setTimeout(()=>URL.revokeObjectURL(url),120000);
   }
+  global.addEventListener('message',event=>{
+    if(event.origin!==location.origin||event.source!==global.parent||event.data?.type!=='relic-ai-settings-changed'||event.data.section!=='assistant')return;
+    runtime.connection=null;runtime.connectionError='';loadConnection();
+  });
   Object.assign(global,{openCoAssistantSettings:openConnection,ensureCoState,renderCoPrepare,bindCoPrepare,renderCoAssistant,bindCoAssistant,renderCoMaking,bindCoMaking});
 })(window);

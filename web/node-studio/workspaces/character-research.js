@@ -1,6 +1,6 @@
 import { createWorkspace, el, field, actions, notice, inputFor, assetURL } from './shared.js';
+import { requestAiSettings } from '../core/ai-settings-events.js';
 
-const providers = [{ value: 'openai_compatible', label: '支持看图的兼容 API' }, { value: 'local_openai', label: '本机视觉模型' }, { value: 'deepseek', label: 'DeepSeek · 需确认所选模型支持图片' }];
 const providerLabel = provider => ({ openai_compatible: '兼容视觉接口', local_openai: '本机视觉模型', deepseek: 'DeepSeek' })[provider] || '视觉服务';
 const confidenceLabel = value => ({ high: '较有把握', medium: '需要你确认', low: '线索较少' })[value] || '等待确认';
 const evidenceLabel = value => ({ source_excerpt: '已读取来源摘录', cached_verified: '已核对的本地资料', search_lead: '检索线索 · 尚待核对' })[value] || '依据待确认';
@@ -128,30 +128,10 @@ export async function characterResearch(container, context) {
     }
     sceneHost.append(grid);
   }
-  function settingsForm() {
-    const details = el('details', { class: 'ns-ws-details' }, el('summary', { text: '设置视觉助手' })); details.open = !settings.visionReady;
-    const provider = field(ws, '_researchProvider', '视觉助手服务', { options: providers, value: assistant.provider || 'openai_compatible', persist: false });
-    const base = field(ws, '_researchBase', '视觉接口地址', { type: 'url', value: assistant.baseUrl || '', placeholder: 'https://服务地址/v1', persist: false });
-    const model = field(ws, '_researchModel', '支持图片输入的模型', { value: assistant.model || '', placeholder: '填写服务实际支持看图的模型 ID', persist: false });
-    const vision = field(ws, '_researchVision', '我已确认这个模型支持图片输入', { type: 'checkbox', value: assistant.vision === true, persist: false });
-    const secret = el('input', { class: 'ns-input', type: 'password', autocomplete: 'off', spellcheck: 'false', id: 'ns-research-secret', placeholder: assistant.hasKey ? '留空沿用当前服务已配置的密钥' : '输入所选视觉服务的密钥' });
-    ws.on(provider.control, 'change', () => { const local = provider.control.value === 'local_openai'; base.control.value = local ? 'http://127.0.0.1:11434/v1' : provider.control.value === 'deepseek' ? 'https://api.deepseek.com/v1' : ''; model.control.value = ''; vision.control.checked = false; secret.value = ''; });
-    details.append(el('div', { class: 'ns-research-settings-grid' }, provider.group, base.group, model.group, el('div', { class: 'ns-ws-field' }, el('label', { for: 'ns-research-secret', text: '视觉助手 API 密钥' }), secret)), vision.group,
-      notice('这里配置的是“看懂图片并返回文字”的视觉助手，和图像生成节点的生图模型分别设置。密钥不写入项目。'),
-      actions(ws.button('保存视觉助手设置', async () => {
-        const payload = { provider: provider.control.value, baseUrl: base.control.value.trim(), model: model.control.value.trim(), vision: vision.control.checked }; if (secret.value.trim()) payload.apiKey = secret.value.trim();
-        try { assistant = await context.api('POST', '/api/assistant/settings', payload); secret.value = ''; settings = await context.api('GET', '/api/node-research/settings'); renderService(); ws.say('视觉助手设置已保存。请确认当前服务和图片发送方式，再开始识别。'); }
-        finally { secret.value = ''; delete payload.apiKey; }
-      })));
-    details.querySelectorAll('input,select,button').forEach(control => { control.disabled = requestBusy; });
-    ws.cleanup(() => { secret.value = ''; }); return details;
-  }
   function renderService() {
-    const wasOpen = serviceHost.querySelector('details')?.open;
-    serviceHost.replaceChildren(el('div', { class: 'ns-research-service-heading' }, el('strong', { text: `${providerLabel(settings.provider)}${settings.model ? ' · ' + settings.model : ''}` }), el('span', { class: 'ns-research-badge', text: settings.visionReady ? '可开始识别' : '视觉接口待配置' })));
-    if (settings.baseUrl) serviceHost.append(el('p', { class: 'ns-ws-description', text: settings.baseUrl }));
+    serviceHost.replaceChildren(el('div', { class: 'ns-research-service-heading' }, el('strong', { text: providerLabel(settings.provider) }), el('span', { class: 'ns-research-badge', text: settings.visionReady ? '可开始识别' : '视觉接口待配置' })));
     if (!settings.visionReady) serviceHost.append(notice(settings.reason || '还没有可用的视觉接口。配置支持看图的模型后，才会发送识别请求。'));
-    const form = settingsForm(); if (typeof wasOpen === 'boolean') form.open = wasOpen; serviceHost.append(form);
+    serviceHost.append(actions(ws.button('AI 设置', () => requestAiSettings('assistant'), { disabled: requestBusy })));
     if (needsConsent() && !consentMatches() && settings.visionReady) {
       const consent = el('input', { type: 'checkbox', id: 'ns-research-consent' });
       serviceHost.append(el('label', { class: 'ns-ws-consent', for: 'ns-research-consent' }, consent, el('span', { text: '允许本项目把服装缩略图发送到上方视觉服务进行识别。按该 API 服务计费，返回候选后仍由我确认角色。' })),
@@ -180,6 +160,15 @@ export async function characterResearch(container, context) {
     if (mayAutoIdentify) Promise.resolve().then(() => identify()).catch(error => { if (!ws.signal.aborted) ws.say(error.message, true); });
     else if (!stale && (ws.params.identificationError || ws.params.researchError)) ws.say(ws.params.identificationError || ws.params.researchError, true);
   } catch (error) { if (!ws.signal.aborted) { renderService(); steps(); ws.say(error.message, true); } } }
+  // A shared connection change refreshes consent/status, never starts recognition.
+  ws.on(window, 'relic-ai-settings-changed', async event => {
+    if(event.detail?.section!=='assistant' || requestBusy)return;
+    try {
+      const next=await context.api('GET','/api/node-research/settings');
+      if(ws.signal.aborted)return;
+      settings=next;renderService();
+    } catch(error){if(!ws.signal.aborted)ws.say(error.message,true);}
+  });
   Promise.resolve().then(initialize);
   return ws;
 }

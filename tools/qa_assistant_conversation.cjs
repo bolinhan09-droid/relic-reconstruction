@@ -1,0 +1,38 @@
+const { chromium } = require('C:/Users/lenovo/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core');
+const fs=require('fs'),path=require('path'),assert=require('assert');
+(async()=>{
+ const dir=path.resolve('.qa-v0116-assistant');fs.mkdirSync(dir,{recursive:true});
+ const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
+ const page=await browser.newPage({viewport:{width:1440,height:900}});const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+ await page.request.post('http://127.0.0.1:17917/qa/reset');
+ await page.goto('http://127.0.0.1:17917');await page.waitForFunction(()=>window.qa?.workspace);
+ const metrics=()=>page.evaluate(()=>Object.fromEntries(['#mount','.ns-node-workspace','.ns-ws-body','.ns-assistant-bench','.ns-assistant-stage','.ns-assistant-dialogue','.ns-assistant-transcript','.ns-assistant-composer'].map(sel=>{const e=document.querySelector(sel),r=e.getBoundingClientRect();return[sel,{x:r.x,y:r.y,w:r.width,h:r.height,scroll:e.scrollHeight,client:e.clientHeight,overflow:getComputedStyle(e).overflowY}]})));
+ console.log('initial',JSON.stringify(await metrics()));
+ await page.getByRole('button',{name:'一起修改',exact:true}).click();
+ await page.waitForFunction(()=>window.qa.flow().nodes.find(n=>n.id==='assistant-1').output?.adopted===true);
+ await page.waitForFunction(()=>document.querySelector('.ns-assistant-progress').textContent.includes('画面已更新'));
+ const first=await page.evaluate(()=>window.qa.flow().nodes.find(n=>n.id==='target-1').output.imageUrl);assert.notEqual(first,'/data/uploads/upload-source/image.png');
+ const prompt=page.locator('.ns-assistant-composer textarea');await prompt.fill('再淡一点');await prompt.press('Control+Enter');
+ await page.waitForFunction(()=>window.qa.flow().nodes.find(n=>n.id==='assistant-1').output?.conversation?.messages?.length===4);
+ await page.waitForFunction(()=>!document.querySelector('.ns-assistant-composer textarea').disabled);
+ const requests=await(await page.request.get('http://127.0.0.1:17917/qa/requests')).json();assert.deepEqual(requests.roles[1],['system','user','assistant','user']);
+ await page.screenshot({path:path.join(dir,'assistant-1440.png')});
+ await page.setViewportSize({width:1024,height:768});await page.waitForTimeout(250);
+ console.log('compact',JSON.stringify(await metrics()));
+ await page.screenshot({path:path.join(dir,'assistant-1024.png')});
+ const bounds=await metrics();assert(bounds['.ns-assistant-composer'].y+bounds['.ns-assistant-composer'].h<=768);assert(bounds['.ns-assistant-transcript'].scroll<=bounds['.ns-assistant-transcript'].client+1);
+ await page.getByRole('button',{name:'上一页',exact:true}).click();assert((await page.locator('.ns-assistant-transcript').innerText()).includes('再淡一点'));
+ const oldVersion=await page.evaluate(()=>window.qa.flow().nodes.find(n=>n.id==='target-1').versions[0].id);
+ await page.getByLabel('切回历史画面').selectOption(oldVersion);await page.waitForFunction(()=>window.qa.flow().nodes.find(n=>n.id==='assistant-1').output?.restored===true);
+ await page.waitForFunction(()=>!document.querySelector('.ns-assistant-composer textarea').disabled);
+ assert.equal((await(await page.request.get('http://127.0.0.1:17917/qa/requests')).json()).count,2);
+ await page.request.post('http://127.0.0.1:17917/qa/fail');await prompt.fill('保留这个尚未提交的想法');await page.getByRole('button',{name:'一起修改',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.ns-assistant-progress').textContent.includes('本次未完成'));
+ assert.equal(await prompt.inputValue(),'保留这个尚未提交的想法');assert.equal(await page.evaluate(()=>window.qa.flow().nodes.find(n=>n.id==='assistant-1').output.conversation.messages.length),6);
+ await page.reload();await page.waitForFunction(()=>window.qa?.workspace);assert.equal(await page.evaluate(()=>window.qa.flow().nodes.find(n=>n.id==='assistant-1').output.conversation.messages.length),6);
+ await page.request.post('http://127.0.0.1:17917/qa/long');await page.setViewportSize({width:1024,height:640});await page.reload();await page.waitForFunction(()=>window.qa?.workspace);await page.waitForTimeout(100);
+ const longPages=await page.locator('.ns-assistant-dialogue-pager small').innerText();assert(Number(longPages.split('/')[1])>10);
+ for(let i=0;i<15;i++){const m=await metrics();assert(m['.ns-assistant-transcript'].scroll<=m['.ns-assistant-transcript'].client+1);const next=page.getByRole('button',{name:'下一页',exact:true});if(await next.isDisabled())break;await next.click();}
+ await page.screenshot({path:path.join(dir,'assistant-long-1024x640.png')});
+ assert.deepEqual(errors,[]);console.log('PASS: actual run routes, direct current image, 2-turn history, revision restore, failed input retention, reload persistence, 1440/1024/640 layouts, long multiline text pagination');
+ await browser.close();
+})().catch(error=>{console.error(error);process.exit(1)});

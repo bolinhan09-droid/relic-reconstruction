@@ -1,0 +1,184 @@
+/* Window layout only. The existing tag shapes, artwork and palette stay in their theme files. */
+:root { --ns-header-height:64px; }
+html, body { height:100%; overflow:hidden; }
+body { height:100dvh; overscroll-behavior:none; }
+.ns-topbar { height:var(--ns-header-height); padding-inline:20px; gap:14px; }
+.ns-entry, .ns-studio { height:calc(100dvh - var(--ns-header-height)); min-height:0; }
+.ns-workspace { inset:0; }
+.ns-entry, .ns-workspace-content, .ns-history-list, .ns-dialog,
+.ns-ws-inspector, .ns-ws-stage, .ns-assistant-dialogue, .ns-garment-controls {
+  overscroll-behavior:contain;
+  scrollbar-width:thin;
+}
+
+/* Give the graph the window's remaining space, without changing its coordinates or gestures. */
+.ns-canvas-toolbar { height:56px; min-height:56px; padding:6px 20px; }
+.ns-ribbon-viewport { min-height:0; flex:1; }
+.ns-selection-bar { height:54px; min-height:54px; padding:5px 20px; }
+.ns-dock { padding:6px 20px 0; }
+.ns-dock-heading { min-height:38px; }
+.ns-node-library { min-height:104px; padding-top:7px; }
+.ns-bookmark { min-height:96px; padding-top:15px; padding-bottom:12px; }
+.ns-bookmark .ns-icon { margin-bottom:3px; }
+.ns-stash-tray { height:88px; }
+.ns-studio-foot { height:26px; padding:3px 20px; }
+.ns-entry-status:empty { display:none; }
+
+/* A start screen and an independently scrollable project shelf fit one desktop window. */
+@media (min-width:960px) and (min-height:640px) {
+  .ns-entry {
+    display:grid;
+    grid-template-columns:minmax(0,1fr) clamp(260px,25vw,340px);
+    grid-template-rows:auto minmax(210px,1fr) auto auto auto auto;
+    align-content:stretch;
+    justify-content:stretch;
+    gap:10px 28px;
+    padding:22px 28px;
+    overflow:hidden;
+  }
+  .ns-entry-heading { grid-column:1; grid-row:1; padding:0; margin:0; align-self:start; }
+  .ns-entry-heading h1 {
+    display:flex;
+    flex-wrap:wrap;
+    gap:0 .25em;
+    max-width:none;
+    font-size:clamp(26px,2.35vw,34px);
+    line-height:1.35;
+    margin:5px 0 7px;
+  }
+  .ns-entry-heading p { max-width:none; margin:0; line-height:1.65; }
+  .ns-upload-stage {
+    grid-column:1;
+    grid-row:2;
+    display:grid;
+    grid-template-columns:minmax(0,1fr);
+    grid-template-rows:minmax(120px,1fr) auto;
+    min-height:0;
+    height:100%;
+    align-self:stretch;
+    margin:0;
+    gap:12px;
+  }
+  .ns-entry .ns-upload-front { height:100%; min-height:0; padding:18px 56px; }
+  .ns-entry .ns-front-preview { min-height:0; }
+  .ns-entry .ns-front-preview svg { max-height:100%; }
+  .ns-entry .ns-upload-side { gap:14px; padding-inline:0; }
+  .ns-entry .ns-start-options { gap:10px; }
+  .ns-entry .ns-start-options legend { margin-bottom:6px; }
+  .ns-entry .ns-start-options label { min-height:72px; padding:10px 12px; gap:8px; }
+  .ns-entry .ns-start-options small { margin-top:3px; line-height:1.5; }
+  .ns-entry .ns-back-upload { margin-top:22px; min-height:58px; }
+  .ns-entry-actions { grid-column:1; grid-row:3; margin:0; align-self:start; gap:8px; }
+  .ns-entry #onboardingOffer { grid-column:1; grid-row:4; min-width:0; margin:0; }
+  .ns-entry-foot { grid-column:1; grid-row:5; margin:0; max-width:none; }
+  .ns-entry-status { grid-column:1; grid-row:6; margin:0; min-height:0; }
+  .ns-entry-history {
+    grid-column:2;
+    grid-row:1/-1;
+    display:flex;
+    flex-direction:column;
+    min-width:0;
+    min-height:0;
+    margin:0;
+    padding:0 0 0 22px;
+    border-top:0;
+    border-left:1px solid var(--ns-line);
+  }
+  .ns-history-heading { display:grid; grid-template-columns:1fr auto; gap:4px 8px; flex:none; margin-bottom:14px; }
+  .ns-history-heading h2 { font-size:17px; }
+  .ns-history-heading > span { grid-column:1; grid-row:2; }
+  .ns-history-heading > button { grid-column:2; grid-row:1/3; align-self:center; }
+  .ns-history-list {
+    flex:1;
+    min-height:0;
+    flex-direction:column;
+    align-items:stretch;
+    gap:12px;
+    overflow-x:hidden;
+    overflow-y:auto;
+    scrollbar-gutter:stable;
+    padding:0 6px 8px 0;
+  }
+  .ns-history-item { width:100%; flex:none; }
+  .ns-history-item .ns-history-card { width:100%; }
+  .ns-history-picture { height:106px; }
+  .ns-history-details { padding:10px 12px; }
+  .ns-history-empty { flex:1; width:100%; min-height:160px; }
+}
+
+/* Image workbenches retain their image while controls and outputs scroll locally. */
+@media (min-width:921px) and (min-height:560px) {
+  .ns-workspace-content:has(.ns-ws-workbench),
+  .ns-workspace-content:has(.ns-assistant-bench),
+  .ns-workspace-content:has(.ns-garment-bench) { overflow:hidden; }
+
+  .ns-workspace-mount:has(.ns-ws-workbench),
+  .ns-workspace-mount:has(.ns-assistant-bench),
+  .ns-workspace-mount:has(.ns-garment-bench) { height:100%; min-height:0; }
+
+  .ns-node-workspace.has-shared-header:is(.ns-ws-workbench,:has(.ns-assistant-bench),:has(.ns-garment-bench)) {
+    display:flex;
+    flex-direction:column;
+    height:100%;
+    min-height:0;
+    padding:14px 16px;
+    overflow:hidden;
+  }
+  .ns-node-workspace.has-shared-header:is(.ns-ws-workbench,:has(.ns-assistant-bench),:has(.ns-garment-bench)) > .ns-ws-body {
+    flex:1;
+    min-height:0;
+  }
+  .ns-node-workspace.has-shared-header.ns-ws-workbench > .ns-ws-body {
+    grid-template-rows:minmax(0,1fr);
+    align-items:stretch;
+    gap:16px;
+  }
+  .ns-node-workspace.has-shared-header .ns-ws-body > .ns-ws-stage,
+  .ns-node-workspace.has-shared-header .ns-ws-body > .ns-ws-inspector {
+    position:static;
+    height:100%;
+    min-height:0;
+    overflow:auto;
+    scrollbar-gutter:stable;
+  }
+  .ns-node-workspace.has-shared-header .ns-ws-stage > *,
+  .ns-node-workspace.has-shared-header .ns-ws-inspector > * { flex-shrink:0; }
+  .ns-node-workspace.has-shared-header .ns-ws-preview > img { min-height:0; max-height:calc(100dvh - 150px); }
+
+  .ns-assistant-bench, .ns-garment-bench { flex:1; height:100%; min-height:0; align-items:stretch; gap:16px; }
+  .ns-assistant-stage, .ns-garment-stage, .ns-assistant-dialogue, .ns-garment-controls {
+    min-height:0;
+    overflow:auto;
+    scrollbar-width:thin;
+    scrollbar-gutter:stable;
+    overscroll-behavior:contain;
+  }
+  .ns-assistant-stage > *, .ns-garment-stage > *, .ns-assistant-dialogue > *, .ns-garment-controls > * { flex-shrink:0; }
+  .ns-assistant-dialogue, .ns-garment-controls { padding:18px; }
+  .ns-assistant-transcript { max-height:none; overflow:visible; padding-right:0; }
+  .ns-node-workspace.has-shared-header:is(.ns-ws-workbench,:has(.ns-assistant-bench),:has(.ns-garment-bench)) > .ns-ws-saved-output {
+    flex:none;
+    max-height:34%;
+    overflow:auto;
+    margin:12px 0 0;
+    scrollbar-width:thin;
+    overscroll-behavior:contain;
+  }
+  .ns-node-workspace.has-shared-header > .ns-ws-status.is-error { flex:none; max-height:90px; overflow:auto; }
+}
+
+/* Small or zoomed windows keep every control reachable inside the app's content area. */
+@media (max-width:959px), (max-height:639px) {
+  .ns-entry { overflow:auto; }
+  .ns-entry #onboardingOffer { grid-column:1; grid-row:3; }
+  .ns-entry-foot { grid-row:4; }
+  .ns-entry-status { grid-row:5; }
+  .ns-entry-history { grid-row:6; }
+}
+@media (max-width:800px) {
+  .ns-topbar { padding-inline:12px; gap:8px; }
+  .ns-canvas-toolbar, .ns-selection-bar { padding-inline:12px; }
+  .ns-selection-bar { height:auto; min-height:54px; }
+  .ns-dock { padding-inline:12px; }
+  .ns-studio-foot { padding-inline:12px; }
+}

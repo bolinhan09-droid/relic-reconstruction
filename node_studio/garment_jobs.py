@@ -183,6 +183,30 @@ def register_garment_job_routes(app, core):
     @app.post("/api/node-garments/jobs")
     def start(payload: dict, request: Request):
         core.require_local_origin(request)
-        return create_job(core, app.state.node_studio_store, bounded_copy(payload))
+        store = app.state.node_studio_store
+        with store.lock:
+            return create_job(core, store, bounded_copy(payload))
     @app.get("/api/node-garments/jobs/{job_id}")
     def status(job_id: str): return get_job(core, job_id)
+
+    @app.on_event("startup")
+    def recover_interrupted_garment_jobs():
+        # get_job already reports these as interrupted. Persist that state too,
+        # so disk-based task guards and cleanup do not block forever after a
+        # crash. Never interrupt a worker belonging to this running process.
+        with _LOCK:
+            root = Path(core.DATA).resolve()
+            for path in (Path(core.DATA) / "node-studio" / "garment-jobs").glob("*.json"):
+                if path.is_symlink() or not path.resolve().is_relative_to(root):
+                    continue
+                try:
+                    job = json.loads(path.read_text(encoding="utf-8"))
+                    if (isinstance(job, dict) and isinstance(job.get("status"), str) and job["status"] in {"queued", "running"}
+                            and job.get("id") == path.stem and job["id"] not in _LIVE):
+                        job.update(status="interrupted", message="上次本机任务已中断，可重新处理",
+                                   updatedAt=now())
+                        _write(core, job)
+                except (OSError, ValueError, HTTPException):
+                    # Unreadable records remain untouched; cleanup will keep
+                    # their potentially shared assets conservatively.
+                    continue

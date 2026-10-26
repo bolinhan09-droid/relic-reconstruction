@@ -27,6 +27,7 @@ from PIL import Image, ImageOps
 import co_design
 
 from .adapters import current_base, local_image_path
+from .graph import lane_for
 from .store import WorkflowStore, bounded_copy, fail, now
 
 _SEARCH = threading.BoundedSemaphore(1)
@@ -93,7 +94,7 @@ def _snapshot(core, store, payload, allowed):
     source = current_base(core, workflow, node)
     # A side assistant observes its host's adopted picture. A pending candidate
     # is not adopted and never silently becomes the research input.
-    if node["id"] not in workflow["order"]:
+    if lane_for(workflow, node["id"]) is None:
         owner = next((entry for entry in workflow["nodes"] if any(node["id"] in ids for ids in entry.get("attachments", {}).values())), None)
         host_output = (owner or {}).get("output") or {}
         if host_output.get("imageUrl"):

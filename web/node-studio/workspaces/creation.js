@@ -1,12 +1,13 @@
 import { createWorkspace, field, actions, notice, inputFor } from './shared.js';
 import { createRectangleCanvas } from './canvas-selection.js';
+import { generationBrief } from './generation-brief.js';
 
 export async function quickCreate(container, context) {
   const ws = createWorkspace(container, context, { title: '先提出一个创作方向', description: '不用一次设定完所有细节。描述想要的整体感觉，生成任务准备好后，在图像生成节点选择模型并运行。', kicker: 'QUICK CREATE' });
-  ws.body.append(ws.preview(), field(ws, 'intent', '你想先看到什么', { type: 'textarea', rows: 5, placeholder: '例如：刚经历战斗，披风下摆有明显磨损，领巾有少量向右下方飞溅的暗红血迹。保留原本服装轮廓。' }).group,
+  const brief = generationBrief(ws, context);
+  ws.body.append(ws.preview(), brief.element,
     field(ws, 'scope', '这一步的范围', { options: [{ value: 'whole', label: '整体服装' }, { value: 'cape', label: '披风' }, { value: 'inner', label: '内搭' }, { value: 'selected', label: '当前部件' }], value: ws.params.scope || 'whole' }).group,
-    notice('这一步整理生成任务，不调用图像接口。可以先准备多个方向，再决定生成哪一版。'),
-    actions(ws.button('准备整体生成任务', async () => { if (!String(ws.params.intent || '').trim()) throw new Error('先写一句想要的效果。'); ws.patch({ scope: ws.params.scope || 'whole' }); await ws.run(); }, { primary: true })));
+    actions(ws.button('准备生成', async () => { brief.assertReady(); ws.patch({ scope: ws.params.scope || 'whole' }); await ws.run(); }, { primary: true })));
   return ws;
 }
 

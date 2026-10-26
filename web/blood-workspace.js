@@ -5,12 +5,12 @@ const bloodOldBind=bindBrushWorkbench,bloodOldStart=startBrush,bloodOldMove=move
 const bloodOldCancel=cancelBrush,bloodOldCanvas=renderBrushCanvas,bloodOldValidate=validateBrushDraft;
 let bloodDrag=null,bloodPointer=null;
 const DETAIL_EFFECTS={
-  blood:[['splatter','定点飞溅'],['soak','浸染晕开'],['drip','沿线流淌'],['contact','接触擦抹']],
+  blood:[['splatter','方向飞溅'],['soak','浸染晕开'],['drip','沿线流淌'],['contact','接触擦抹']],
   slash:[['slit','细窄刀口'],['frayed','撕裂毛边'],['hole','不规则破洞']],
   wear:[['scuff','磨损纤维'],['fade','磨白褪色'],['mud_splatter','泥点飞溅'],['mud_smear','泥污擦抹'],['dust','细尘积灰'],['water_stain','水渍干痕']],
   burn:[['char','焦黑烧灼'],['smoke','烟熏渐层'],['scorched_edge','沿边焦化']]
 };
-const DETAIL_TIPS={splatter:'按住起点，拖出飞溅方向，松开生成一组血滴。',soak:'沿布面连续涂抹，预览连片浸染与柔和边缘。',drip:'沿想要的流向画线，预览细长流痕与末端积滴。',contact:'顺着接触方向拖动，预览断续擦痕和浓淡变化。',slit:'沿刀口走向画线，预览窄裂口。',frayed:'沿破损方向画线，预览外翻边缘和纤维毛边。',hole:'点按形成破洞，轻拖可连接破损范围。',scuff:'轻扫容易磨损的位置，预览纤维擦痕。',fade:'在需要的位置轻扫或圈区，预览局部磨白。',mud_splatter:'点按或轻扫，安排大小不一的泥点。',mud_smear:'沿擦碰方向拖动，预览条带状泥污。',dust:'轻扫或圈出区域，预览低浓度细尘。',water_stain:'轻扫或圈区，预览不规则水渍和干燥边线。',char:'沿边描线或圈区，预览焦黑与棕色过渡。',smoke:'轻扫或圈区，预览柔和烟熏，不生成破洞。',scorched_edge:'沿衣服边缘描线，预览单侧焦化与浅色毛边。'};
+const DETAIL_TIPS={splatter:'按住起点，拖出方向并蓄力，松开完成一次飞溅；覆盖范围控制大面积，血量控制疏密。',soak:'沿布面连续涂抹，预览连片浸染与柔和边缘。',drip:'沿想要的流向画线，预览细长流痕与末端积滴。',contact:'顺着接触方向拖动，预览断续擦痕和浓淡变化。',slit:'沿刀口走向画线，预览窄裂口。',frayed:'沿破损方向画线，预览外翻边缘和纤维毛边。',hole:'点按形成破洞，轻拖可连接破损范围。',scuff:'轻扫容易磨损的位置，预览纤维擦痕。',fade:'在需要的位置轻扫或圈区，预览局部磨白。',mud_splatter:'点按或轻扫，安排大小不一的泥点。',mud_smear:'沿擦碰方向拖动，预览条带状泥污。',dust:'轻扫或圈出区域，预览低浓度细尘。',water_stain:'轻扫或圈区，预览不规则水渍和干燥边线。',char:'沿边描线或圈区，预览焦黑与棕色过渡。',smoke:'轻扫或圈区，预览柔和烟熏，不生成破洞。',scorched_edge:'沿衣服边缘描线，预览单侧焦化与浅色毛边。'};
 function detailUi(type){
   if(!DETAIL_EFFECTS[type])return null;
   state.effectSettings=state.effectSettings||{};
@@ -32,11 +32,11 @@ function loadDetailControls(stroke){
   state.effectSettings[stroke.type]={subtype:DETAIL_EFFECTS[stroke.type].some(([k])=>k===stroke.effectSubtype)?stroke.effectSubtype:stroke.type==='blood'?(stroke.bloodBehavior||'splatter'):DETAIL_EFFECTS[stroke.type][0][0],parameters:{detail:.55,age:0,wetness:0,...stroke.effectParameters}};
 }
 function bloodUi(){
-  const defaults={behavior:'splatter',force:.55,spread:.32,amount:.55,flow:.78,edgeSoftness:.65,direction:-.65};
+  const defaults={behavior:'splatter',force:.55,spread:.48,amount:.55,coverage:.55,flow:.78,edgeSoftness:.65,direction:-.65};
   state.bloodSettings={...defaults,...state.bloodSettings};
   const value=state.bloodSettings;
   if(!['splatter','soak'].includes(value.behavior))value.behavior='splatter';
-  for(const key of ['force','spread','amount','flow','edgeSoftness'])value[key]=clamp(Number(value[key])||defaults[key],.01,1);
+  for(const key of ['force','spread','amount','coverage','flow','edgeSoftness'])value[key]=clamp(Number(value[key])||defaults[key],.01,1);
   value.direction=Number.isFinite(value.direction)?value.direction:defaults.direction;
   return value;
 }
@@ -61,6 +61,7 @@ validateBrushDraft=function(strokes){
       if(!p||typeof p!=='object')throw Error('血迹参数不完整。');
       const keys=stroke.bloodBehavior==='splatter'?['force','spread','amount']:['flow','edgeSoftness'];
       if(keys.some(k=>!Number.isFinite(p[k])||p[k]<0||p[k]>1))throw Error('血迹参数超出范围。');
+      if(p.coverage!==undefined&&(!Number.isFinite(p.coverage)||p.coverage<0||p.coverage>1))throw Error('飞溅覆盖范围超出范围。');
       if(stroke.bloodBehavior==='soak'&&(!Array.isArray(p.pressures)||p.pressures.length!==stroke.points.length||p.pressures.some(v=>!Number.isFinite(v)||v<0||v>1)))throw Error('浸染笔触压力记录不完整。');
     }
     if(stroke.effectSubtype!==undefined){
@@ -86,7 +87,9 @@ renderBrushWorkbench=function(){
   const behavior=s.bloodBehavior,tip=DETAIL_TIPS[s.effectSubtype];
   const modes=effectControls(s);
   html=html.replace(/<div class="co-mode-choice"[^>]*>[\s\S]*?<\/div>/,modes);
-  html=html.replace(/<p class="brush-tip" id="brushTip">[\s\S]*?<\/p>/,`<p class="brush-tip" id="brushTip">${tip}</p><div class="blood-parameters">${behavior==='splatter'?bloodSlider('bloodForce','飞溅力度',settings.force)+bloodSlider('bloodAmount','血量',settings.amount):bloodSlider('bloodFlow',s.effectSubtype==='drip'?'流痕浓度':'浸染量',settings.flow)}<details><summary>更多笔触设置</summary>${behavior==='splatter'?bloodSlider('bloodSpread','散布宽度',settings.spread)+`<label for="bloodDirection"><span>点按时的方向</span><output id="bloodDirectionValue">${Math.round(settings.direction*180/Math.PI)}°</output></label><input id="bloodDirection" type="range" min="-180" max="180" value="${Math.round(settings.direction*180/Math.PI)}">`:bloodSlider('bloodSoftness','晕染边缘',settings.edgeSoftness)}</details>${selectedStroke?`<button id="bloodApplyParameters" class="button outline-button full-width" ${busy?'disabled':''}>${selectedStroke.bloodVersion===2?'更新所选血迹':'用新笔刷重做所选血迹'}</button><small class="field-hint">只更新所选痕迹，可撤销。</small>`:''}</div>`);
+  const presets=behavior==='splatter'?`<div class="blood-presets" role="group" aria-label="飞溅范围预设"><button class="button outline-button" data-blood-preset="fine" ${busy?'disabled':''}>局部细溅</button><button class="button outline-button" data-blood-preset="wide" ${busy?'disabled':''}>大范围飞溅</button></div>`:'';
+  const selectedHint=selectedStroke?selectedStroke.bloodVersion===2?'<small class="field-hint">松开滑杆即更新所选血迹，可撤销</small>':`<button id="bloodApplyParameters" class="button outline-button full-width" ${busy?'disabled':''}>用新笔刷重做所选血迹</button>`:'';
+  html=html.replace(/<p class="brush-tip" id="brushTip">[\s\S]*?<\/p>/,`<p class="brush-tip" id="brushTip">${tip}</p><div class="blood-parameters">${presets}${behavior==='splatter'?bloodSlider('bloodForce','飞溅力度',settings.force)+bloodSlider('bloodCoverage','覆盖范围',settings.coverage)+bloodSlider('bloodAmount','血量',settings.amount):bloodSlider('bloodFlow',s.effectSubtype==='drip'?'流痕浓度':'浸染量',settings.flow)}<details><summary>更多笔触设置</summary>${behavior==='splatter'?bloodSlider('bloodSpread','扇面宽度',settings.spread)+`<label for="bloodDirection"><span>点按时的方向</span><output id="bloodDirectionValue">${Math.round(settings.direction*180/Math.PI)}°</output></label><input id="bloodDirection" type="range" min="-180" max="180" value="${Math.round(settings.direction*180/Math.PI)}">`:bloodSlider('bloodSoftness','晕染边缘',settings.edgeSoftness)}</details>${selectedHint}</div>`);
   html=html.replace('<span>笔触宽度</span>',`<span>${behavior==='splatter'?'主滴尺度':s.effectSubtype==='drip'?'流痕宽度':'涂抹宽度'}</span>`);
   if(state.brushStrokes.some(stroke=>stroke.type==='blood'))html=html.replace('<div class="co-refine-block">',`<button id="bloodClearAll" class="button text-button full-width" ${busy?'disabled':''}>清除这轮血迹，保留其他痕迹</button><div class="co-refine-block">`);
   return html;
@@ -129,21 +132,34 @@ bindBrushWorkbench=function(){
     if(quickLocked()||brushStroke||bloodDrag||coPendingArea){toast('先结束当前操作，再切换血迹方式。');return;}
     state.bloodSettings={...bloodUi(),behavior:button.dataset.bloodBehavior};dirty({invalidate:false});render();
   };
-  for(const [id,key] of [['bloodForce','force'],['bloodAmount','amount'],['bloodSpread','spread'],['bloodFlow','flow'],['bloodSoftness','edgeSoftness']])$('#'+id)?.addEventListener('input',event=>{
+  for(const [id,key] of [['bloodForce','force'],['bloodCoverage','coverage'],['bloodAmount','amount'],['bloodSpread','spread'],['bloodFlow','flow'],['bloodSoftness','edgeSoftness']])$('#'+id)?.addEventListener('input',event=>{
     state.bloodSettings={...bloodUi(),[key]:Number(event.target.value)/100};$('#'+id+'Value').textContent=event.target.value+'%';dirty({invalidate:false});
   });
   $('#bloodDirection')?.addEventListener('input',event=>{state.bloodSettings={...bloodUi(),direction:Number(event.target.value)*Math.PI/180};$('#bloodDirectionValue').textContent=event.target.value+'°';dirty({invalidate:false});});
+  for(const id of ['bloodForce','bloodCoverage','bloodAmount','bloodSpread','bloodFlow','bloodSoftness','brushSize','brushOpacity','effectDetail','effectSurface'])$('#'+id)?.addEventListener('change',()=>{
+    const selected=state.brushStrokes.find(s=>s.id===coSelectedStroke);if(selected?.bloodVersion===2&&selected.bloodBehavior===brushSettings().bloodBehavior)applyBloodParameters({preserveForce:id!=='bloodForce'});
+  });
+  for(const button of $$('[data-blood-preset]'))button.addEventListener('click',()=>{
+    if(quickLocked()||brushStroke||bloodDrag)return;
+    const wide=button.dataset.bloodPreset==='wide';state.bloodSettings={...bloodUi(),coverage:wide?.92:.28,force:wide?.82:.5,spread:wide?.82:.38,amount:wide?.84:.4};
+    const selected=state.brushStrokes.find(s=>s.id===coSelectedStroke);if(selected?.bloodVersion===2&&selected.bloodBehavior==='splatter')applyBloodParameters();else{dirty({invalidate:false});render();}
+  });
   for(const button of $$('[data-select-stroke]')){
     const stroke=state.brushStrokes.find(s=>s.id===button.dataset.selectStroke);
     if(detailLabel(stroke||{}))button.querySelector('small').textContent=detailLabel(stroke)+(stroke.type==='blood'?' · 布面融合':'');
     else if(stroke?.bloodVersion===2)button.querySelector('small').textContent=stroke.bloodBehavior==='soak'?'浸染涂抹 · 布面融合':'定点飞溅 · 布面融合';
     button.addEventListener('click',()=>{loadBloodControls(state.brushStrokes.find(s=>s.id===coSelectedStroke));render();});
   }
-  $('#bloodApplyParameters')?.addEventListener('click',()=>{
+  $('#bloodApplyParameters')?.addEventListener('click',applyBloodParameters);
+};
+function applyBloodParameters(options={}){
     if(quickLocked()||brushStroke||bloodDrag)return;
     const old=state.brushStrokes.find(s=>s.id===coSelectedStroke);if(!old||old.type!=='blood')return;
     try{
       const c=$('#brushCanvas'),s=brushSettings(),settings={...bloodUi(),...s,behavior:s.bloodBehavior};let next;
+      // Resizing a selected impact must not silently replace the force recorded
+      // by its drag gesture with the next stroke's base-force slider setting.
+      if(options.preserveForce&&old.bloodVersion===2&&old.bloodBehavior==='splatter')settings.force=old.bloodParameters.force;
       if(old.bloodVersion===2&&old.bloodBehavior==='splatter'&&settings.behavior==='splatter')next=RelicBloodEngine.regenerateSplatter(old,settings,c.width,c.height);
       else if(old.bloodVersion===2&&old.bloodBehavior==='soak'&&settings.behavior==='soak')next=RelicBloodEngine.regenerateSoak(old,settings,c.width,c.height);
       else if(settings.behavior==='splatter'){
@@ -155,14 +171,15 @@ bindBrushWorkbench=function(){
       }
       const strokes=state.brushStrokes.map(p=>p.id===old.id?next:p);validateBrushDraft(strokes);rememberBrush();state.brushStrokes=strokes;brushHandoff=null;dirty();render();toast('所选血迹已更新，可撤销恢复。');
     }catch(error){toast(error.message);}
-  });
-};
+}
 function bloodPressure(event){return event.pointerType==='pen'?clamp(Number(event.pressure)||.1,.05,1):1;}
 function bloodTarget(origin,s,w,h){const step=.08;return {x:clamp(origin.x+Math.cos(s.direction)*step*Math.min(w,h)/w,0,1),y:clamp(origin.y+Math.sin(s.direction)*step*Math.min(w,h)/h,0,1)};}
 function newImpact(target){
   const c=$('#brushCanvas'),s=brushSettings(),origin=bloodDrag.origin;
   const pull=Math.hypot((target.x-origin.x)*c.width,(target.y-origin.y)*c.height)/Math.min(c.width,c.height);
-  const force=pull>.008?clamp(pull/.3, .04,1):s.force;
+  // The strength setting remains meaningful while dragging. A longer pull
+  // adds energy to it; it no longer silently replaces the chosen slider value.
+  const force=pull>.008?clamp(s.force*(.5+pull/.3), .04,1):s.force;
   const end=pull>.008?target:bloodTarget(origin,s,c.width,c.height);
   const stroke=RelicBloodEngine.createSplatter({...s,id:bloodDrag.id,seed:bloodDrag.seed,origin,target:end,force},c.width,c.height);
   stroke._bloodDraft=true;return stroke;
@@ -194,7 +211,7 @@ finishBrush=function(event){
   const c=$('#brushCanvas'),stroke=brushStroke;brushStroke=null;bloodDrag=null;bloodPointer=null;
   if(event&&c.hasPointerCapture(event.pointerId))c.releasePointerCapture(event.pointerId);
   if(stroke){delete stroke._bloodDraft;
-    if(stroke.bloodBehavior==='splatter'){state.bloodSettings={...bloodUi(),force:stroke.bloodParameters.force,direction:stroke.direction};}
+    if(stroke.bloodBehavior==='splatter'){state.bloodSettings={...bloodUi(),direction:stroke.direction};}
     try{
       const strokes=[...state.brushStrokes,stroke];validateBrushDraft(strokes);
       if(stroke.shapes.length&&brushSource===imageReference()?.url){rememberBrush();state.brushStrokes=strokes;coSelectedStroke=stroke.id;brushHandoff=null;quickMessage='';dirty();}

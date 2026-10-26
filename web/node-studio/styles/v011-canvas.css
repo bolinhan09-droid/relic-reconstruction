@@ -1,0 +1,64 @@
+/* v0.11 keeps the existing tag material and palette, with a quieter shell. */
+.ns-entry-heading h1>span{display:block;white-space:nowrap}
+.ns-start-options{border:0;padding:0;margin:0;display:grid;gap:10px}
+.ns-start-options legend{font-size:12px;color:var(--ns-muted);margin-bottom:12px}
+.ns-start-options label{display:flex;align-items:flex-start;gap:10px;padding:13px 12px;border:1px solid var(--ns-line);background:var(--ns-paper);cursor:pointer}
+.ns-start-options label:has(input:checked){border-color:var(--ns-accent);background:var(--ns-accent-soft)}
+.ns-start-options input{margin:4px 0 0;accent-color:var(--ns-accent)}
+.ns-start-options strong{display:block;font-weight:600;font-size:14px}
+.ns-start-options small{display:block;margin-top:5px;color:var(--ns-muted);font-size:11px;line-height:1.6}
+.ns-canvas-heading{display:flex;align-items:center;gap:20px}
+.ns-image-add{display:flex;gap:7px}
+.ns-image-add>.ns-button{min-height:38px}
+.ns-canvas-toolbar{height:70px;padding:12px 28px}
+.ns-selection-bar{height:60px;padding:8px 28px;gap:12px}
+.ns-selection-actions{gap:5px}
+.ns-selection-actions .ns-button{padding-inline:10px;white-space:nowrap}
+.ns-selection-bar>div:first-child{gap:10px}
+.ns-selection-bar>div:first-child>span{max-width:95px}
+.ns-root-route{position:absolute;display:flex;align-items:center;gap:3px;z-index:5;max-width:400px}
+.ns-route-grip{border:0;background:transparent;color:var(--ns-muted);width:35px;height:36px;font-size:23px;cursor:grab}
+.ns-route-grip:active{cursor:grabbing}
+.ns-root-label{display:flex;align-items:center;gap:12px;border:0;border-left:2px solid var(--ns-line);padding:5px 12px;min-height:32px;background:var(--ns-canvas);color:var(--ns-ink);font-size:12px;cursor:pointer;max-width:340px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ns-root-label span{font-size:10px;color:var(--ns-muted);flex:none}
+.ns-root-route.is-active .ns-root-label{border-left-color:var(--ns-accent)}
+.ns-ribbon-viewport.is-canvas-drop{box-shadow:inset 0 0 0 1px var(--ns-line)}
+.ns-connect-field{display:grid;gap:10px;font-size:13px;color:var(--ns-muted);margin:18px 0}
+.ns-connect-field select{width:100%;min-height:44px;border:1px solid var(--ns-line);padding:8px 11px;background:var(--ns-paper);color:var(--ns-ink);font:inherit}
+.ns-node-card:focus-visible,.ns-junction-card:focus-visible{filter:brightness(1.12);outline:3px solid var(--ns-ink)!important;outline-offset:-7px!important}
+.ns-route-grip:focus-visible,.ns-root-label:focus-visible{outline:2px solid var(--ns-accent);outline-offset:2px}
+.ns-workspace-header>div>span:empty{display:none}
+.ns-dock{padding-top:8px}
+.ns-node-library{min-height:116px;padding-top:9px}
+.ns-bookmark{min-height:108px}
+.ns-stash-tray{height:96px}
+.ns-shelf-empty p{font-size:11px}
+.ns-history-item{position:relative;min-width:0;width:230px;flex:0 0 230px}
+.ns-history-item .ns-history-card{width:100%;height:100%}
+.ns-history-delete{position:absolute;right:8px;top:8px;min-width:44px;min-height:34px;border:1px solid var(--ns-line);background:var(--ns-paper);color:var(--ns-muted);font-size:11px;cursor:pointer}
+.ns-history-delete:hover{color:var(--ns-accent);border-color:var(--ns-accent)}
+.ns-project-list-item{display:flex;align-items:center;gap:8px}
+.ns-project-list-item .ns-project-row{flex:1;min-width:0}
+.ns-project-list-item .ns-project-row>span{overflow:hidden;min-width:0}
+.ns-project-list-item .ns-project-row strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ns-project-delete{flex:none;color:var(--ns-muted);font-size:12px}
+.ns-project-delete:hover{color:var(--ns-accent)}
+@media(max-width:1100px){
+ .ns-canvas-toolbar,.ns-selection-bar{padding-inline:18px}
+ .ns-canvas-heading{gap:10px}.ns-canvas-heading>.ns-small-label{display:none}
+ .ns-selection-bar>div:first-child>span{display:none}
+ .ns-selection-actions .ns-button{padding-inline:7px;font-size:11px}
+ .ns-dock-help{display:none}
+ .ns-stash-shelf{flex-basis:175px}
+}
+@media(max-width:800px){
+ .ns-selection-bar{height:auto;min-height:60px;flex-wrap:wrap}
+ .ns-selection-actions{flex-wrap:wrap}
+ .ns-canvas-controls>#newButton{display:none}
+ .ns-image-add>.ns-button{padding-inline:8px;font-size:11px}
+ .ns-stash-shelf{display:none}
+ .ns-canvas-controls{gap:3px}
+}
+@media(prefers-reduced-motion:reduce){
+ .ns-root-route,.ns-node-card{scroll-behavior:auto;transition:none}
+}

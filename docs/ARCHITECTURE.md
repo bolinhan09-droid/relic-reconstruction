@@ -1,15 +1,22 @@
 # 遗迹重构：节点创作台架构
 
-当前版本 0.10.0，共 23 个节点。使用 Windows 桌面壳、本机 FastAPI 服务和模块化浏览器工作区；无需云端网页托管。六个创作节点继续保留，分支与合拢管理多方案，服装展平与效果映射分为独立节点。
+当前版本 0.11.3，共 23 个节点。使用 Windows 桌面壳、本机 FastAPI 服务和模块化浏览器工作区；无需云端网页托管。六个创作节点继续保留，分支与合拢管理多方案，服装展平与效果映射分为独立节点。画布支持多个独立输入与路线。
 
 ## 目录与责任
 
 | 目录 | 责任 |
 | --- | --- |
 | `node_studio/catalog.py` | 23 个节点的名称、接口、位置、实现状态的单一登记 |
+| `desktop.py` / `desktop_runtime.py` | 桌面窗口、工作区单实例、后台身份验证、启动日志与进程生命周期 |
+| `frontend_assets.py` | 前端内容指纹、版本资源路径、禁用旧缓存与界面构建身份 |
+| `tools/update_desktop.py` | 校验更新包、固定安装目录、事务替换与回退，独立于用户数据 |
+| `node_studio/graph.py` | 多路线的来源解析、依赖检查与连接约束 |
 | `node_studio/store.py` | 本机工作流持久化、结构验证、乐观锁与原子写入 |
 | `node_studio/routes.py` | 显式运行、结果保存及功能入口 |
 | `node_studio/adapters.py` | 现有图像、绘图、映射等能力的后端适配 |
+| `node_studio/making_bridge.py` | 选择当前路线的有效映射，阻止过期、跨路线或未经映射的制作输入 |
+| `node_studio/making_kit.py` | 校验映射来源与尺度，按笔刷规划制作工序并导出模板制作包 |
+| `node_studio/text_inputs.py` / `web/node-studio/core/text-input.js` | 同一来源规则解析当前路线的文字与图像输入，隔离其他分支与独立作品 |
 | `node_studio/character_research.py` | 角色候选、缩略图授权、公开资料检索与来源边界 |
 | `node_studio/assistant_engine.py` | 宿主上下文、视觉请求、工具白名单、候选、采用和恢复 |
 | `node_studio/garment_tools.py` / `garment_jobs.py` | 分割/展平算法适配、异步任务快照、来源校验与部件输出 |
@@ -18,6 +25,7 @@
 | `node_studio/proximity.py` | 仅本机内存中的可选靠近感知会话 |
 | `web/node-studio/core/` | 与视觉无关的图操作、版本与保存队列 |
 | `web/node-studio/components/` | 标签主线、插槽、节点库和预览 |
+| `web/node-studio/components/global-ai-settings.js` | 全局助手和图像连接面板，复用已有服务配置，不把密钥写进作品 |
 | `web/node-studio/workspaces/` | 每类节点的内部创作工作区 |
 | `web/node-studio/adapters/` | 旧算法画布的同源隔离适配 |
 | `web/node-studio/styles/` | 可单独替换的配色、标签形态与布局 |
@@ -27,15 +35,25 @@
 
 现有 `brush_workflow.py`、`garment_mapping.py`、`surface_workflow.py` 经 `/legacy` 隔离画布接入精修和映射。分割、展平、协作、融合、手势与三维命中均有独立工作区；宿主 context 负责版本保存和页面生命周期。
 
+桌面启动使用带本次实例标识的入口，前端资源从 `/ui/{内容指纹}/` 加载。入口、模块、样式和嵌入式旧工作区共同避开上次安装留下的 HTTP 缓存；窗口保留原 origin 和 localStorage。界面构建标识用于核对后台与实际加载的页面，不能仅凭后台版本判断升级成功。
+
 ## 关键数据
 
-工作流包含 `schemaVersion / id / revision / title / nodes / order / branches / stash / assets / context`。每个节点保存 `type / params / attachments / status / output`；节点旧输出进入 `versions`。主线、独立分支与侧插引用分开，禁止重复归属、悬空引用和循环挂载。合拢输出 `candidate_set`，融合显式选择两至三个已采用结果。
+工作流包含 `schemaVersion / id / revision / title / nodes / order / routes / branches / stash / assets / context`。每个节点保存 `type / params / attachments / status / output`；节点旧输出进入 `versions`。主线、独立路线、分支与侧插引用分开，禁止重复归属、悬空引用和循环挂载。合拢输出 `candidate_set`，融合显式选择两至三个已采用结果。
+
+`routes` 的每项为 `{id, label, order, x, y}`，无 `forkId`，拥有独立起点和画布位置。脱离路线的普通节点表现为单节点路线，可继续接入步骤。分支仍由 `forkId` 追溯同一父路线，不能借独立路线隐式读取其他输入。前后端共同验证唯一归属、有限坐标、依赖无环和来源范围。参考卡保存全部 `references` 与 `activeReferenceIndex`，输出只以所选图片作为当前起点；引用图片不会自动获得真实服装来源身份。
+
+标准工作流由纯图操作创建，真实服装输入后依次配置快速生成、图像生成、精致修改和制作指导，不运行适配器、不访问模型。旧工程缺少 `routes` 时按空列表处理。
 
 服装方案输出保留 `imageUrl`、真实服装来源、项目记录、独立笔触、保护区、表面分析和映射信息。仅有一张 AI 合成图片时，不伪称仍有完整可编辑痕迹；制作前需重新确认对应和尺寸。生成任务与实际图像结果分别记录。
 
 图像语义显式区分：`imageSemantics: editable_preview` 与 `editableStrokes:true` 表示显示合成预览、编辑时从原始 reference 重放独立笔触；`imageSemantics:raster_base` 与 `editableStrokes:false` 表示当前 imageUrl 已包含既有痕迹，新编辑以它为底图。AI 采用、手动导入、实验草稿和平铺映射使用后者，防止旧原图劫持或重复渲染。原笔触与来源另行保留为追溯记录。
 
 ## 执行与版本
+
+想法整理以 `output.kind: intent` 保存可编辑文字和文字版本，图像来源另行保留。生成工作区以只读框显示上游文字，另设“本次补充”；前后端使用同样的路线、侧插与去重规则形成请求。重新保存上游文字会使后续结果过期，保留原结果和历史，不自动重跑或付费。
+
+AI 设置由顶层面板统一管理，协作助手与图像生成保持独立连接。节点默认跟随全局；图像节点的高级选项允许使用另一项已配置服务。配置变化通知只携带服务类别，不携带密钥；嵌入式工作区通过同源并验证窗口来源的消息打开相同设置面板。
 
 图像生成不会因为连接节点而执行，只在用户明确点击后发生，在线接口要求 `confirmedExternal=true`。角色识别在项目首次明确授权所选服务后，主动插入识别卡可自动识别一次，可能产生视觉对话接口费用；不自动重试，服务地址改变需重新同意。密钥交由现有本机服务管理，不进入工作流文件和分享数据。
 

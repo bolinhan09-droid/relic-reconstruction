@@ -1,0 +1,22 @@
+/* Entry corrections: clear horizontal choices and an actual pending-load state. */
+.ns-entry .ns-upload-side{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:18px;padding:0 8px;min-width:0}
+.ns-entry .ns-start-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;min-width:0}
+.ns-entry .ns-start-options legend{margin-bottom:9px;font-size:12px}
+.ns-entry .ns-start-options label{min-width:0;min-height:88px;padding:15px 13px;gap:9px;align-items:flex-start;border-radius:4px}
+.ns-entry .ns-start-options label>span{min-width:0}
+.ns-entry .ns-start-options strong{font-size:14px;white-space:nowrap}
+.ns-entry .ns-start-options small{font-size:11px;line-height:1.75;text-wrap:pretty}
+.ns-entry .ns-start-options label:focus-within{outline:2px solid var(--ns-focus);outline-offset:3px}
+.ns-entry .ns-back-upload{margin-top:26px;min-height:64px}
+.ns-entry-splash{background:var(--ns-paper);color:var(--ns-ink)}
+.ns-entry-splash::before,.ns-splash-symbol{display:none}
+.ns-splash-title{font-size:25px;letter-spacing:.08em;margin:0 0 10px}
+.ns-splash-status{font-size:13px;color:var(--ns-muted);margin:0 0 18px}
+.ns-boot-progress{position:relative;width:210px;height:3px;overflow:hidden;background:var(--ns-line);margin:0 0 22px}
+.ns-boot-progress::after{content:'';position:absolute;inset:0;background:var(--ns-accent);transform-origin:left;animation:ns-boot-working 1.2s ease-in-out infinite alternate}
+.ns-splash-parts{font-size:11px;color:var(--ns-muted);gap:24px}
+.ns-splash-skip{bottom:30px;right:32px;min-height:40px!important}
+@keyframes ns-boot-working{from{transform:translateX(-70%)}to{transform:translateX(70%)}}
+@media(max-width:900px){.ns-entry .ns-upload-side{grid-template-columns:minmax(0,1fr);gap:14px;padding-inline:4px}.ns-entry .ns-back-upload{margin-top:0;min-height:48px;justify-self:start}.ns-entry .ns-start-options label{min-height:86px;padding:13px 11px}}
+@media(max-width:460px){.ns-entry .ns-start-options{gap:9px}.ns-entry .ns-start-options label{gap:7px;padding:12px 9px}.ns-entry .ns-start-options strong{font-size:13px}.ns-entry .ns-start-options small{font-size:11px}.ns-splash-parts{gap:15px}.ns-splash-skip{right:20px;bottom:20px}}
+@media(prefers-reduced-motion:reduce){.ns-boot-progress::after{animation:none;transform:scaleX(.55)}.ns-splash-symbol .ns-splash-slash{animation:none}}

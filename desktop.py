@@ -13,12 +13,58 @@ import sys
 import time
 import uuid
 import urllib.request
+import threading
+import traceback
 from pathlib import Path
+from desktop_runtime import (APP_VERSION, WorkspaceLease, OwnedProcessJob, StartupNotice,
+                             parent_watchdog, matching_identity, request_json, focus_process,
+                             workspace_key, default_workspace)
 
-APP_NAME = '遗迹重构'
-PORT = 17870
+APP_NAME = '遗迹重构 · v' + APP_VERSION
+PORT = 17890
 FROZEN = bool(getattr(sys, 'frozen', False))
 BASE = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent
+WEBVIEW2_DOWNLOAD_URL = 'https://developer.microsoft.com/microsoft-edge/webview2/'
+
+
+class MissingWebViewRuntime(RuntimeError):
+    """The native loader confirmed there is no usable WebView2 installation."""
+
+
+def require_webview_runtime():
+    """Prevent pywebview silently falling back to the incompatible IE engine."""
+    if os.name != 'nt':
+        return
+    import platform
+    from webview.util import interop_dll_path
+    architecture = 'arm64' if platform.machine().lower() in ('arm64', 'aarch64') else ('x64' if ctypes.sizeof(ctypes.c_void_p) == 8 else 'x86')
+    loader_path = interop_dll_path('runtimes/win-' + architecture + '/native/WebView2Loader.dll')
+    loader = ctypes.WinDLL(loader_path)
+    available = loader.GetAvailableCoreWebView2BrowserVersionString
+    available.argtypes = [ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_void_p)]
+    available.restype = ctypes.c_long
+    version = ctypes.c_void_p()
+    result = available(None, ctypes.byref(version))
+    try:
+        if (result & 0xffffffff) == 0x80070002 or (result == 0 and not version.value):
+            raise MissingWebViewRuntime('这台电脑还没有 Microsoft Edge WebView2 Runtime，暂时无法显示创作界面')
+        if result != 0:
+            raise RuntimeError('无法检查 WebView2 Runtime，请从微软官方页面安装或修复后重试\n' + WEBVIEW2_DOWNLOAD_URL)
+    finally:
+        if version.value:
+            free = ctypes.windll.ole32.CoTaskMemFree
+            free.argtypes = [ctypes.c_void_p]
+            free.restype = None
+            free(version)
+
+
+def show_missing_webview_runtime():
+    text = ('这台电脑还没有 Microsoft Edge WebView2 Runtime\n\n'
+            '请安装微软官方运行时，再重新打开遗迹重构。无需安装 Python，作品不会丢失\n\n'
+            + WEBVIEW2_DOWNLOAD_URL + '\n\n是否打开微软官方下载页面？')
+    if os.name == 'nt' and ctypes.windll.user32.MessageBoxW(None, text, APP_NAME, 0x34) == 6:
+        import webbrowser
+        webbrowser.open(WEBVIEW2_DOWNLOAD_URL)
 
 
 def message(text, error=False):
@@ -97,7 +143,17 @@ def serve(port, workspace):
     # Parent sets the path before any backend module is imported.
     os.environ['RELIC_DATA_DIR'] = str(workspace)
     import uvicorn
-    from app import app
+    from app import app, DATA
+    record = json.loads(os.environ.get('RELIC_DESKTOP_INSTANCE', '{}'))
+    if record:
+        @app.get('/api/desktop/identity', include_in_schema=False)
+        def desktop_identity():
+            return dict(application='relic-reconstruction', version=app.version,
+                        workspace=workspace_key(DATA), nonce=record['nonce'],
+                        parentPid=record['pid'], pid=os.getpid())
+        # The web application ends in a "/" StaticFiles mount; this private
+        # desktop-only route must precede that catch-all mount.
+        app.router.routes.insert(0, app.router.routes.pop())
     uvicorn.run(app, host='127.0.0.1', port=port, log_level='warning',
                 access_log=False, loop='asyncio', http='h11', ws='none', log_config=None)
 
@@ -108,71 +164,208 @@ def main():
     parser.add_argument('--port', type=int, default=PORT)
     parser.add_argument('--serve', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--smoke-report', type=Path, help=argparse.SUPPRESS)
+    parser.add_argument('--ui-report', type=Path, help=argparse.SUPPRESS)
+    parser.add_argument('--headless-seconds', type=float, default=0, help=argparse.SUPPRESS)
+    parser.add_argument('--self-check-report', type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.self_check_report:
+        from runtime_paths import asset_root
+        assets = asset_root()
+        ok = all((assets / path).is_file() for path in ('web/index.html', 'resources/catalog.json'))
+        args.self_check_report.write_text(json.dumps({'application': 'relic-reconstruction',
+                                                     'version': APP_VERSION, 'ok': ok}), encoding='utf-8')
+        return 0 if ok else 1
     if not 1024 <= args.port <= 65535:
         raise ValueError('端口应在 1024–65535 之间。')
-    workspace = (args.data_dir or Path(os.environ.get('RELIC_DATA_DIR', str(BASE / 'workspace')))).resolve()
+    workspace = (args.data_dir or Path(os.environ.get('RELIC_DATA_DIR',
+                                                     str(default_workspace(BASE, FROZEN))))).resolve()
     workspace.mkdir(parents=True, exist_ok=True)
     runtime = workspace / 'runtime'
     runtime.mkdir(exist_ok=True)
     os.environ['RELIC_DATA_DIR'] = str(workspace)
     if args.serve:
+        record = json.loads(os.environ.get('RELIC_DESKTOP_INSTANCE', '{}'))
+        if not record or not record.get('created'):
+            raise RuntimeError('本机服务只能通过桌面入口启动')
+        parent_watchdog(record['pid'], record['created'])
         serve(args.port, workspace)
         return
 
     # Stable port preserves the browser origin and its local drafts. Never kill a
     # competing process or silently move a user into an empty draft origin.
-    lockfile = (runtime / 'desktop.lock').open('a+b')
-    if os.name == 'nt':
-        import msvcrt
-        try:
-            lockfile.seek(0)
-            msvcrt.locking(lockfile.fileno(), msvcrt.LK_NBLCK, 1)
-        except OSError:
-            handle = ctypes.windll.user32.FindWindowW(None, APP_NAME)
-            if handle:
-                ctypes.windll.user32.ShowWindow(handle, 9)
-                ctypes.windll.user32.SetForegroundWindow(handle)
-            else:
-                message('这个工作区已经打开，请查看任务栏中的遗迹重构。')
-            lockfile.close()
-            return
+    lease = WorkspaceLease(workspace, args.port)
+    if not lease.acquire():
+        # The winner may still be writing its identity. Never focus by title.
+        existing = None
+        for _ in range(15):
+            existing = lease.existing()
+            if existing:
+                break
+            time.sleep(.1)
+        focused = bool(existing and focus_process(existing['pid']))
+        if not focused and not (args.smoke_report or args.ui_report or args.headless_seconds):
+            text = ('正在打开这个工作区，请稍候并查看任务栏' if existing and existing.get('state') == 'starting'
+                    else '这个工作区正在使用中，请先保存并关闭已打开的旧版窗口')
+            message(text)
+        return 0
     child = None
+    backend_pid = None
+    job = None
+    notice = StartupNotice(enabled=not (args.smoke_report or args.ui_report or args.headless_seconds))
+    window = None
+    closing = threading.Event()
     try:
+        if not args.headless_seconds:
+            require_webview_runtime()
         with socket.socket() as probe:
             try:
                 probe.bind(('127.0.0.1', args.port))
             except OSError as exc:
                 raise RuntimeError(f'本机端口 {args.port} 正在使用。请关闭之前的桌面窗口后再打开；不会自动停止其他软件。') from exc
+        job = OwnedProcessJob()
         command = [sys.executable]
         if not FROZEN:
             command.append(str(Path(__file__).resolve()))
         command += ['--serve', '--port', str(args.port), '--data-dir', str(workspace)]
-        with (runtime / 'desktop-server.log').open('ab', buffering=0) as log:
+        environment = os.environ.copy()
+        environment['RELIC_DESKTOP_INSTANCE'] = json.dumps(lease.record)
+        environment['PYTHONUTF8'] = '1'
+        log_path = runtime / 'desktop-server.log'
+        if log_path.is_file() and log_path.stat().st_size > 5 * 1024 * 1024:
+            os.replace(log_path, runtime / 'desktop-server.previous.log')
+        with log_path.open('ab', buffering=0) as log:
+            log.write(('\n[start ' + time.strftime('%Y-%m-%d %H:%M:%S') + ' v' + APP_VERSION + ']\n').encode())
             child = subprocess.Popen(command, cwd=BASE, stdin=subprocess.DEVNULL,
                                      stdout=log, stderr=log, close_fds=True,
+                                     env=environment,
                                      creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
-        deadline = time.monotonic() + 35
+        job.add(child)
+        lease.update(childPid=child.pid)
+        deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
-            health = read_health(args.port)
-            if health and health.get('application') == 'relic-reconstruction':
+            identity = request_json(args.port)
+            # Windows venv python.exe is a redirector that creates the actual
+            # interpreter below it. Accept only a process in our owned Job.
+            candidate_pid = identity.get('pid') if isinstance(identity, dict) else None
+            owned_pid = candidate_pid and (candidate_pid == child.pid or job.contains(candidate_pid))
+            if owned_pid and matching_identity(identity, lease.record, candidate_pid):
+                backend_pid = candidate_pid
+                health = read_health(args.port)
                 break
             if child.poll() is not None:
                 raise RuntimeError('本机服务未能启动。详细记录在工作区 runtime/desktop-server.log。')
             time.sleep(.2)
         else:
             raise RuntimeError('启动超时。详细记录在工作区 runtime/desktop-server.log。')
+        lease.update(state='ready', backendPid=backend_pid)
+        if args.headless_seconds:
+            # Exercises the real shell/service lifecycle without opening a GUI.
+            until = time.monotonic() + min(args.headless_seconds, 300)
+            while time.monotonic() < until and child.poll() is None:
+                time.sleep(.1)
+            if child.poll() is not None:
+                raise RuntimeError('本机服务意外退出，请查看 desktop-server.log')
+            return 0
 
         import webview
         webview.settings['ALLOW_DOWNLOADS'] = True
         webview.settings['OPEN_EXTERNAL_LINKS_IN_BROWSER'] = True
         bridge = DesktopBridge(workspace)
-        window = webview.create_window(APP_NAME, f'http://127.0.0.1:{args.port}/',
+        # A unique entry request bypasses already-fresh HTTP caches retained by
+        # older releases; the HTML uses a content-versioned module tree as well.
+        entry_url = f'http://127.0.0.1:{args.port}/?ui={health["uiBuild"]}&launch={lease.record["nonce"]}'
+        window = webview.create_window(APP_NAME, entry_url,
                                        js_api=bridge, width=1440, height=940,
                                        min_size=(1024, 700), background_color='#e9edeb',
-                                       hidden=bool(args.smoke_report),
-                                       confirm_close=not bool(args.smoke_report))
+                                       hidden=bool(args.smoke_report or args.ui_report),
+                                       confirm_close=not bool(args.smoke_report or args.ui_report))
         bridge._window = window
+        def verify_document():
+            # Validate the actual WebView document, not only the backend health.
+            state = {'version': APP_VERSION, 'uiBuild': health['uiBuild'], 'ready': False}
+            try:
+                for _ in range(150):
+                    document = window.evaluate_js("""JSON.stringify({
+                        uiBuild:document.querySelector('meta[name="relic-ui-build"]')?.content || '',
+                        legacy:location.pathname.endsWith('/index.html')&&!location.pathname.includes('/node-studio/'),
+                        title:document.title,
+                        ready:!!window.RelicNodeStudio && window.RelicNodeStudio.getCatalog().length>=20,
+                        standard:!!document.querySelector('input[value="standard"]'),
+                        addReference:!!document.getElementById('addReferenceButton'),
+                        globalAi:!!document.getElementById('aiSettingsButton')
+                    })""")
+                    data = json.loads(document)
+                    state.update(document=data)
+                    if data['legacy'] and data['uiBuild'] == health['uiBuild']:
+                        return
+                    if data['ready']:
+                        state['ready'] = (data['uiBuild'] == health['uiBuild']
+                                          and data['standard'] and data['addReference'] and data['globalAi']
+                                          and APP_VERSION in data['title'])
+                        break
+                    if closing.wait(.2):
+                        return
+                (runtime / 'desktop-ui.json').write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
+                if not state['ready'] and not (args.ui_report or args.smoke_report):
+                    message('界面文件未完整更新，请关闭后重新打开\n作品仍保存在本机；诊断记录在 runtime/desktop-ui.json', True)
+            except Exception:
+                # Closing a window mid-load is allowed; no additional popup.
+                pass
+            finally:
+                notice.close()
+        window.events.loaded += verify_document
+
+        def monitor_service():
+            while not closing.wait(.5):
+                if child.poll() is not None:
+                    notice.close()
+                    message('本机服务意外停止，请重新打开遗迹重构\n已保存的方案仍在工作区\n'
+                            '诊断记录：' + str(runtime / 'desktop-server.log'), True)
+                    window.destroy()
+                    return
+
+        threading.Thread(target=monitor_service, daemon=True, name='desktop-service-watch').start()
+
+        def inspect_ui():
+            """Read the actual native document without creating or saving work."""
+            report = {'nativeWindow': True, 'version': APP_VERSION, 'passed': False}
+            try:
+                for _ in range(180):
+                    try:
+                        if window.evaluate_js("!!window.RelicNodeStudio && window.RelicNodeStudio.getCatalog().length >= 20"):
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(.2)
+                report['document'] = json.loads(window.evaluate_js("""JSON.stringify({
+                    title:document.title, brand:document.querySelector('.ns-brand small')?.textContent,
+                    uiBuild:document.querySelector('meta[name="relic-ui-build"]')?.content || '',
+                    ready:!!window.RelicNodeStudio,
+                    standard:!!document.querySelector('input[value="standard"]'),
+                    addReference:!!document.getElementById('addReferenceButton'),
+                    globalAi:!!document.getElementById('aiSettingsButton'),
+                    apiGuide:!!document.getElementById('apiGuideButton') && !!document.querySelector('.ns-api-guide-dialog'),
+                    classicEntryStyle:[...document.styleSheets].some(sheet => sheet.href?.includes('/styles/entry-classic.css') && sheet.cssRules.length > 0)
+                        && getComputedStyle(document.querySelector('.ns-entry')).display === 'grid'
+                        && parseFloat(getComputedStyle(document.querySelector('.ns-upload-front')).height) <= 340,
+                    guidedPractice:!!document.getElementById('startPracticeButton') && !!document.getElementById('practiceGuide'),
+                    fixedViewport:getComputedStyle(document.body).overflow === 'hidden',
+                    recentCount:document.querySelectorAll('[data-history-id]').length,
+                    deleteCount:document.querySelectorAll('[data-history-delete]').length,
+                    scripts:[...document.scripts].map(s=>s.src).filter(Boolean)
+                })"""))
+                document = report['document']
+                report['passed'] = bool(document['ready'] and document['standard'] and document['addReference'] and document['globalAi']
+                                        and document['apiGuide'] and document['classicEntryStyle']
+                                        and document['guidedPractice'] and document['fixedViewport']
+                                        and document['uiBuild'] == health['uiBuild'] and APP_VERSION in document['title']
+                                        and document['deleteCount'] == document['recentCount'])
+            except Exception as exc:
+                report['error'] = type(exc).__name__
+            finally:
+                args.ui_report.parent.mkdir(parents=True, exist_ok=True)
+                args.ui_report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
+                window.destroy()
 
         def smoke():
             # Test the actual native WebView2 document, not a substitute browser.
@@ -202,7 +395,7 @@ def main():
                 report['workflow'] = window.evaluate_js("JSON.stringify(window.RelicNodeStudio.getWorkflow())")
                 workflow = json.loads(report['workflow'])
                 report['passed'] = bool(document['ready'] and document['entry'] and document['library']
-                    and workflow and len(workflow.get('order', [])) == 1
+                    and workflow and len(workflow.get('order', [])) >= 1
                     and any(node.get('type') == 'garment_input' for node in workflow.get('nodes', [])))
             except Exception as exc:
                 report['error'] = type(exc).__name__ + ': ' + str(exc)[:500]
@@ -211,16 +404,19 @@ def main():
                 args.smoke_report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
                 window.destroy()
 
-        webview.start(smoke if args.smoke_report else None, gui='edgechromium',
+        webview.start(inspect_ui if args.ui_report else smoke if args.smoke_report else None, gui='edgechromium',
                       private_mode=False, storage_path=str(workspace / 'window-profile'),
                       localization={'global.quitConfirmation': '关闭会结束本次 AI 任务。请先保存方案，确认关闭？',
                                     'global.ok': '确定', 'global.cancel': '取消'})
     finally:
+        closing.set()
+        notice.close()
         if child and child.poll() is None:
             # Release only model children owned by this backend before Windows
             # terminates it. Stop routes never kill an unrelated port/process.
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-            for route in ('/api/local-image/stop', '/api/local-ai/stop'):
+            own_service = backend_pid is not None and matching_identity(request_json(args.port), lease.record, backend_pid)
+            for route in ('/api/local-image/stop', '/api/local-ai/stop') if own_service else ():
                 try:
                     request = urllib.request.Request(f'http://127.0.0.1:{args.port}{route}', data=b'{}', headers={'Content-Type':'application/json'}, method='POST')
                     with opener.open(request, timeout=4) as response:
@@ -233,16 +429,32 @@ def main():
             except subprocess.TimeoutExpired:
                 child.kill()
                 child.wait(timeout=3)
-        lockfile.close()
+        if job:
+            job.close()
+        lease.close()
 
 
 if __name__ == '__main__':
     try:
-        main()
+        sys.exit(main() or 0)
     except Exception as exc:
         # No credentials are included in launcher error messages.
         if '--serve' in sys.argv:
             raise
-        if '--smoke-report' not in sys.argv:
-            message('无法打开遗迹重构。\n\n' + str(exc) + '\n\nWindows 需要 Microsoft Edge WebView2 运行时。', True)
+        if '--self-check-report' in sys.argv:
+            # Installer probes must never write to the caller's personal data,
+            # including when its report destination or bundled assets fail.
+            raise
+        try:
+            workspace = Path(os.environ.get('RELIC_DATA_DIR', str(BASE / 'workspace')))
+            (workspace / 'runtime').mkdir(parents=True, exist_ok=True)
+            with (workspace / 'runtime' / 'desktop-launcher.log').open('a', encoding='utf-8') as log:
+                log.write(time.strftime('%Y-%m-%d %H:%M:%S') + '\n' + traceback.format_exc() + '\n')
+        except OSError:
+            pass
+        if not any(flag in sys.argv for flag in ('--smoke-report', '--ui-report', '--headless-seconds', '--self-check-report')):
+            if isinstance(exc, MissingWebViewRuntime):
+                show_missing_webview_runtime()
+            else:
+                message('无法打开遗迹重构\n\n' + str(exc) + '\n\n诊断记录在工作区 runtime 文件夹', True)
         raise

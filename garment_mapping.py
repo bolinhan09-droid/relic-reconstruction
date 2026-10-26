@@ -296,8 +296,12 @@ def source_bundle(core, project, mode='brush'):
     for name, image in [('original.png', original), ('guide.png', guide), ('effects.png', paint)]:
         if not (folder / name).is_file():
             image.save(folder / name)
+    # Preserve the exact editable source used by this mapping. Later template
+    # exports must not borrow strokes from a newer, unrelated project revision.
+    if not (folder / 'brush-snapshot.json').is_file():
+        core.write_json(folder / 'brush-snapshot.json', snapshot)
     value.update(sourceOriginalUrl=core.data_url(folder / 'original.png'), sourceGuideUrl=core.data_url(folder / 'guide.png'),
-                 effectLayerUrl=core.data_url(folder / 'effects.png'), tag=tag)
+                 effectLayerUrl=core.data_url(folder / 'effects.png'), brushSnapshotUrl=core.data_url(folder / 'brush-snapshot.json'), tag=tag)
     return value, original, guide, paint
 
 
@@ -427,6 +431,8 @@ def create_mapping(core, project, payload):
     identifier = 'mapping-' + uuid.uuid4().hex[:16]
     folder = core.DATA / 'projects' / core.safe_id(project['id']) / 'mappings' / identifier
     folder.mkdir(parents=True, exist_ok=True)
+    snapshot_path = core.DATA / 'projects' / core.safe_id(project['id']) / 'mapping-sources' / source_meta['tag'] / 'brush-snapshot.json'
+    core.write_json(folder / 'source-brush-snapshot.json', core.read_json(snapshot_path, {}))
     assets = {'target.png': target, 'mapped-original.png': warped, 'mapped-effects.png': layer,
               'mapped-result.png': result.convert('RGB'), 'coverage.png': coverage,
               'unknown-mask.png': unknown, 'uncertainty.png': diagnostic.convert('RGB'), 'mesh.png': mesh}

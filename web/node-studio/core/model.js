@@ -1,24 +1,36 @@
 /* Pure workflow operations. Rendering and network code never mutate the graph. */
-import {getLanes,laneForNode,laneById,branchesFor,hostFor,structural,precedingNodeIds,collectMergeCandidates,markAfter,markStructureChanges,assertGraph} from './graph.js';
-export {getLanes,laneForNode,precedingNodeIds,collectMergeCandidates,markAfter} from './graph.js';
+import {getLanes,laneForNode,laneById,branchesFor,hostFor,structural,precedingNodeIds,collectMergeCandidates,markAfter,markStructureChanges,assertGraph,clearInvalidInputs} from './graph.js';
+export {getLanes,laneForNode,laneById,rootLaneForNode,precedingNodeIds,collectMergeCandidates,markAfter} from './graph.js';
 export const copy = value => structuredClone(value);
 export const uid = () => globalThis.crypto?.randomUUID?.().replaceAll('-', '').slice(0, 16) || `n${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 export const findNode = (workflow, id) => workflow.nodes.find(node => node.id === id);
 export const definitionFor = (catalog, type) => catalog.find(def => (def.type || def.id) === type);
 export function upstreamOutput(workflow, nodeId) {
   const host=hostFor(workflow,nodeId);
-  if(host?.output?.imageUrl) return copy(host.output);
-  for(const id of precedingNodeIds(workflow,nodeId).reverse()) {
+  const own=findNode(workflow,nodeId);
+  const scope=[...precedingNodeIds(workflow,nodeId),...(host?[host.id]:[])];
+  if(['garment_input','image_reference'].includes(own?.type)) scope.push(nodeId);
+  for(const id of scope.reverse()) {
     const node=findNode(workflow,id);
+    // Analysis may carry a preview URL, but it must not replace the garment
+    // artifact (including its editable strokes/project) flowing through here.
+    if(['intent_assist','design_advice','design_review','production_guide','production_context','scene_context'].includes(node?.type)) continue;
+    if(['garment_input','image_reference'].includes(node?.type)) {
+      const asset=node.type==='garment_input'?node.params?.front:node.params?.references?.[node.params?.activeReferenceIndex || 0];
+      // An emptied reference is a deliberate break, not permission to borrow
+      // a photo from the original mainline or a previous input.
+      if(!asset) return null;
+      const bound=node.output?.originalImageUrl || node.output?.sourceImageUrl || node.output?.imageUrl;
+      if(node.output?.imageUrl && bound===(asset.url || asset.imageUrl)) return {...copy(node.output),sourceRole:node.type==='garment_input'?'garment':'reference'};
+      return {kind:node.type==='garment_input'?'garment':'reference',...copy(asset),imageUrl:asset.imageUrl || asset.url,reference:copy(asset),sourceRole:node.type==='garment_input'?'garment':'reference'};
+    }
     if(node?.type==='branch_merge') {
       const base=upstreamOutput(workflow,node.params.forkId);
       return {kind:'candidate_set',candidates:collectMergeCandidates(workflow,node),mergeNodeId:node.id,baseImageUrl:base?.imageUrl || base?.baseImageUrl};
     }
     if(node?.type!=='branch_create' && node?.output?.imageUrl) return copy(node.output);
   }
-  const first = findNode(workflow, workflow.order[0]);
-  const asset = first?.params?.front || workflow.assets?.[0];
-  return asset ? {kind: 'garment', ...copy(asset), imageUrl: asset.imageUrl || asset.url, reference: copy(asset)} : null;
+  return !scope.length && own?.output?.imageUrl?copy(own.output):null;
 }
 export function makeNode(type, catalog, params = {}) {
   const definition = definitionFor(catalog, type);
@@ -57,7 +69,7 @@ export function insertNode(current, type, catalog, {afterId, at, hostId, slot,la
   if(type==='branch_create') return createBranchGroup(current,afterId || laneById(current,laneId)?.order.at(-1),catalog);
   if(type==='branch_merge') throw Error('合拢节点随分支一起建立，请先添加探索分支。');
   const workflow = copy(current), definition = definitionFor(catalog, type);
-  if (type === 'garment_input') throw Error('每个项目只有一个服装输入，请进入起点补充照片。');
+  if (type === 'garment_input') return insertNodeOnCanvas(current,type,catalog);
   const node = makeNode(type, catalog);
   workflow.nodes.push(node);
   if (definition.placement === 'attachment' || hostId) {
@@ -83,7 +95,7 @@ export function insertNode(current, type, catalog, {afterId, at, hostId, slot,la
 }
 export function detachNode(current, id) {
   const workflow = copy(current), node = findNode(workflow, id);
-  if (!node || node.type === 'garment_input') throw Error('服装输入是项目起点，可以更换照片，不能撤下。');
+  if (!node || id === workflow.order[0]) throw Error('主线服装输入保留在起点，可另建服装路线');
   if(structural(node)) throw Error('分支与合拢共同保存路线结构，请移动路线中的创作节点。');
   const lane=laneForNode(workflow,id),index=lane?.order.indexOf(id) ?? -1;
   if (index >= 0) {
@@ -97,13 +109,14 @@ export function detachNode(current, id) {
     }
   }
   workflow.stash = [...new Set([...(workflow.stash || []), id])];
+  workflow.routes=(workflow.routes || []).filter(route=>route.order.length);
   workflow.selectedNodeId = lane?.order[Math.max(0,index-1)] || lane?.forkId || workflow.order[0];
-  markStructureChanges(current,workflow);
+  clearInvalidInputs(workflow);markStructureChanges(current,workflow);
   return workflow;
 }
 export function moveNode(current, id, index, catalog,laneId='main') {
   const workflow = copy(current), node = findNode(workflow, id);
-  if (!node || node.type === 'garment_input') throw Error('服装输入固定在主线起点。');
+  if (!node || id === workflow.order[0]) throw Error('主线服装输入保留在起点，可另建服装路线');
   if(structural(node)) throw Error('分支与合拢共同保存路线结构，请移动路线中的创作节点。');
   const definition = definitionFor(catalog, node.type);
   if (!definition) throw Error('这个节点暂未登记。');
@@ -119,7 +132,8 @@ export function moveNode(current, id, index, catalog,laneId='main') {
   }
   target.order.splice(destination,0,id);
   workflow.stash = (workflow.stash || []).filter(value => value !== id);
-  markStructureChanges(current,workflow);
+  workflow.routes=(workflow.routes || []).filter(route=>route.order.length);
+  clearInvalidInputs(workflow);markStructureChanges(current,workflow);
   workflow.selectedNodeId = id;
   workflow.selectedLaneId=laneId;
   assertWorkflow(workflow);
@@ -162,4 +176,60 @@ export function restoreVersion(current, id, versionId) {
 }
 export function assertWorkflow(workflow) {
   return assertGraph(workflow);
+}
+
+function canvasPosition(position={},workflow) {
+  const offset=(workflow.routes || []).length;
+  const result={x:position.x ?? 64,y:position.y ?? (620+offset*360)};
+  if(Object.values(result).some(value=>typeof value!=='number' || !Number.isFinite(value) || Math.abs(value)>100000)) throw Error('画布坐标无效');
+  return result;
+}
+
+/** Keep completed cards on the canvas; moving is not deleting or rerunning. */
+export function placeNodeOnCanvas(current,id,position={}) {
+  const node=findNode(current,id);
+  if(!node) throw Error('节点不存在');
+  if(id===current.order[0]) throw Error('主线服装输入保留在起点，可另建服装路线');
+  if(structural(node)) throw Error('分支结构请整体保留，创作节点可以拖出');
+  const workflow=copy(current),source=laneForNode(workflow,id),coords=canvasPosition(position,workflow);
+  if(source && (workflow.routes || []).includes(source) && source.order.length===1) {
+    Object.assign(source,coords);workflow.selectedNodeId=id;workflow.selectedLaneId=source.id;return workflow;
+  }
+  if(source) source.order=source.order.filter(item=>item!==id);
+  // The main lane is a view over workflow.order, so mutate its array directly.
+  if(source?.id==='main') workflow.order=source.order;
+  for(const host of workflow.nodes) for(const slot of ['top','bottom']) if(host.attachments?.[slot]) host.attachments[slot]=host.attachments[slot].filter(item=>item!==id);
+  workflow.stash=(workflow.stash || []).filter(item=>item!==id);
+  workflow.routes=(workflow.routes || []).filter(route=>route.order.length);
+  const route={id:uid(),label:node.label || '独立方案',order:[id],...coords};
+  workflow.routes.push(route);workflow.selectedNodeId=id;workflow.selectedLaneId=route.id;
+  clearInvalidInputs(workflow);markStructureChanges(current,workflow);assertWorkflow(workflow);return workflow;
+}
+
+export function insertNodeOnCanvas(current,type,catalog,position={}) {
+  const definition=definitionFor(catalog,type);
+  if(!definition) throw Error('这个节点暂未登记');
+  if(['branch_create','branch_merge'].includes(type)) throw Error('请在现有方案后建立分支');
+  if(definition.placement==='attachment') throw Error('这个节点需要插入侧边槽位');
+  const workflow=copy(current),node=makeNode(type,catalog),route={id:uid(),label:node.label,order:[node.id],...canvasPosition(position,workflow)};
+  workflow.nodes.push(node);workflow.routes=[...(workflow.routes || []),route];
+  workflow.selectedNodeId=node.id;workflow.selectedLaneId=route.id;assertWorkflow(workflow);return workflow;
+}
+
+export function positionRoute(current,routeId,position) {
+  const workflow=copy(current),route=(workflow.routes || []).find(item=>item.id===routeId);
+  if(!route) throw Error('独立路线不存在');
+  Object.assign(route,canvasPosition(position,workflow));return workflow;
+}
+
+/** Only seed new projects. No fabricated output and no model execution. */
+export function makeStandardWorkflow(current,catalog) {
+  const workflow=copy(current);
+  if(workflow.order.length!==1 || findNode(workflow,workflow.order[0])?.type!=='garment_input') return workflow;
+  if((workflow.routes || []).length || (workflow.branches || []).length) return workflow;
+  for(const type of ['quick_create','image_generate','precision_edit','production_guide']) {
+    const node=makeNode(type,catalog);workflow.nodes.push(node);workflow.order.push(node.id);
+  }
+  workflow.routes ||= [];workflow.selectedNodeId=workflow.order[0];workflow.selectedLaneId='main';
+  workflow.template='standard_v011';assertWorkflow(workflow);return workflow;
 }

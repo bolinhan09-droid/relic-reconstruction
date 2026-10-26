@@ -28,6 +28,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageOps
 import cloud_provider
 import runtime_paths
 import local_models
+from desktop_runtime import APP_VERSION
 
 ROOT = runtime_paths.asset_root()
 RESOURCES = ROOT / 'resources'
@@ -43,7 +44,20 @@ EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix='relic-generatio
 TYPES = {'slash': '刀痕', 'blood': '血迹', 'burn': '烧焦'}
 GENERATION_PIPELINE = 'sd15_masked_img2img_v1'
 LOG = logging.getLogger('relic')
-app = FastAPI(title='遗迹重构 · 节点创作台', version='0.10.0')
+app = FastAPI(title='遗迹重构 · 节点创作台', version=APP_VERSION)
+
+
+@app.middleware('http')
+async def fresh_application_documents(request: Request, call_next):
+    response = await call_next(request)
+    # A portable desktop retains its WebView profile across upgrades. Reusing
+    # heuristic cached HTML/modules must never hide an installed UI update.
+    path = request.url.path
+    if (path in {'/', '/legacy'} or path.startswith(('/api/', '/web/', '/ui/'))
+            or path.endswith(('.html', '.js', '.mjs', '.css'))):
+        response.headers['Cache-Control'] = 'no-store, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+    return response
 
 
 @app.exception_handler(RequestValidationError)
@@ -485,7 +499,7 @@ def environment() -> dict:
 
 @app.get('/api/health')
 def health():
-    return {'ok': True, 'application': 'relic-reconstruction', 'version': '0.10.0', 'root': str(ROOT),
+    return {'ok': True, 'application': 'relic-reconstruction', 'version': app.version, 'uiBuild': FRONTEND.fingerprint, 'root': str(ROOT),
             'dataDir': str(DATA), 'themeUrl': '/data/theme.png' if (DATA / 'theme.png').is_file() else None}
 
 
@@ -1218,6 +1232,9 @@ register_proximity_routes(app, sys.modules[__name__])
 from node_studio.character_research import register_character_research_routes
 register_character_research_routes(app, sys.modules[__name__])
 
+from frontend_assets import FrontendAssets, NoStoreStaticFiles
+FRONTEND = FrontendAssets(WEB)
+app.mount(FRONTEND.mount_path, FRONTEND.static, name='versioned-ui')
 app.mount('/resources', StaticFiles(directory=RESOURCES), name='resources')
 app.mount('/data', StaticFiles(directory=DATA), name='data')
 
@@ -1226,15 +1243,15 @@ app.mount('/data', StaticFiles(directory=DATA), name='data')
 def index():
     path = WEB / 'node-studio' / 'index.html'
     if path.is_file():
-        return FileResponse(path)
+        return FRONTEND.entry_html('node-studio/index.html')
     return HTMLResponse('<!doctype html><meta charset="utf-8"><title>战损方案工作台</title><p>平台服务已就绪，正在准备界面。</p>')
 
 
 @app.get('/legacy')
 def legacy_editor():
     """Existing algorithms keep their own UI lifecycle behind the node adapter."""
-    return FileResponse(WEB / 'index.html')
+    return FRONTEND.entry_html('index.html')
 
 
-app.mount('/web', StaticFiles(directory=WEB), name='web')
-app.mount('/', StaticFiles(directory=WEB, html=True), name='frontend')
+app.mount('/web', NoStoreStaticFiles(directory=WEB), name='web')
+app.mount('/', NoStoreStaticFiles(directory=WEB, html=True), name='frontend')

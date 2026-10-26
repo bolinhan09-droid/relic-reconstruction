@@ -13,11 +13,11 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CODE = ['desktop.py', 'app.py', 'runtime_paths.py', 'local_models.py', 'cloud_provider.py',
+CODE = ['desktop.py', 'desktop_runtime.py', 'app.py', 'frontend_assets.py', 'runtime_paths.py', 'local_models.py', 'cloud_provider.py',
         'co_design.py', 'brush_workflow.py', 'manual_workflow.py', 'quick_draft.py', 'garment_mapping.py',
         'garment_correspondence.py', 'garment_shape_matching.py', 'surface_workflow.py', 'cloth_surface.py',
         'local_ai_runtime.py', 'local_image_runtime.py']
-DOCS = ['README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'LOCAL_MODELS.md', '.gitignore',
+DOCS = ['README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'LOCAL_MODELS.md', '开始使用.txt', '.gitignore', '.gitattributes', 'RELEASE_NOTES.md',
         'requirements.txt', 'requirements-desktop.txt', 'requirements-build.txt',
         'requirements-correspondence.txt', 'requirements-surface.txt',
         'requirements-lock-windows.txt', 'requirements-proximity.txt',
@@ -56,14 +56,24 @@ def prepare(stage):
     copy_file('resources/garments/demo_coat_front.png', stage)
     # A personal E-drive path is never an installed model on another computer.
     (stage / 'resources/models.json').write_text('{"models": []}\n', encoding='utf-8')
-    for relative in ['models/README.md', 'models/manifest.example.json', 'tools/build_desktop.py', 'tools/check_desktop_distribution.py', 'tools/create_app_icon.py', 'tools/check_desktop_save.py',
+    for relative in ['models/README.md', 'models/manifest.example.json', 'tools/build_desktop.py', 'tools/update_desktop.py', 'tools/check_desktop_lifecycle.py', 'tools/check_desktop_update.py', 'tools/check_desktop_distribution.py', 'tools/create_app_icon.py', 'tools/check_desktop_save.py',
                      'tools/dino_garment_correspondence.py', 'tools/download_correspondence_model.py',
                      'tools/analyze_garment_surface.py', 'tools/download_surface_models.py', 'tools/cloth_surface_algorithm.txt',
                      'tools/face_proximity_worker.py', 'tools/segment_garment.py', 'tools/download_segmentation_model.py',
                      'tools/install_qwen_local.py', 'tools/install_qwen_image_local.py', 'tools/install_browser_vision_assets.py',
                      'tools/start_qwen_local.ps1', 'tools/stop_qwen_local.ps1',
                      'tools/check_node_assistant.py', 'tools/check_garment_tools.py', 'tools/check_node_garments_api.py',
-                     'tools/check_editable_blend.py', 'tools/check_node_studio_backend.py', 'tools/check_node_studio_branches.py']:
+                     'tools/check_editable_blend.py', 'tools/check_node_studio_backend.py', 'tools/check_node_studio_branches.py',
+                     'tools/check_node_routes.py', 'tools/check_node_routes.cjs', 'tools/check_node_deletion.py',
+                     'tools/check_frontend_assets.py', 'tools/check_assistant_connection.py', 'tools/qa_assistant_connection.cjs',
+                     'tools/check_node_text_flow.py', 'tools/qa_node_text_flow.cjs',
+                     'tools/qa_global_ai_settings.cjs', 'tools/qa_global_ai_app.cjs',
+                     'tools/check_making_kit.py', 'tools/check_making_routes.py', 'tools/qa_making_kit.cjs', 'tools/qa_making_app.cjs',
+                     'tools/check_making_shortcut.cjs', 'tools/qa_workbenches_v0116.cjs', 'tools/qa_workbench_layouts.cjs',
+                     'tools/check_splatter_coverage.cjs', 'tools/check_splatter_backend.py', 'tools/qa_splatter_renderer.cjs', 'tools/qa_splatter_workbench.cjs',
+                     'tools/check_generation_results.py', 'tools/qa_generation_results.cjs', 'tools/check_node_job_tracker.cjs', 'tools/qa_garment_current.cjs',
+                     'tools/check_assistant_conversation.py', 'tools/qa_assistant_conversation.py', 'tools/qa_assistant_conversation.cjs',
+                     'tools/qa_onboarding_workbench.cjs', 'tools/qa_api_guide.cjs']:
         copy_file(relative, stage)
 
 
@@ -135,9 +145,22 @@ def main():
         if result.returncode:
             raise SystemExit('Build failed; inspect build.log.')
         package = output / 'windows' / 'RelicReconstruction'
-        for relative in ['README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'LOCAL_MODELS.md']:
+        for relative in ['README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'LOCAL_MODELS.md', '开始使用.txt']:
             shutil.copy2(stage / relative, package / relative)
         shutil.copytree(stage / 'models', package / 'model-pack-example')
+        updater = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--onefile', '--console',
+                   '--name', 'RelicUpdater', '--icon', str(stage / 'web/assets/relic.ico'),
+                   '--distpath', str(output / 'updater'), '--workpath', str(output / 'build' / 'updater'),
+                   '--specpath', str(output / 'build'), str(stage / 'tools/update_desktop.py')]
+        with (output / 'build-updater.log').open('w', encoding='utf-8') as log:
+            result = subprocess.run(updater, cwd=stage, env=environment, stdout=log, stderr=subprocess.STDOUT)
+        if result.returncode:
+            raise SystemExit('Updater build failed; inspect build-updater.log.')
+        shutil.copy2(output / 'updater/RelicUpdater.exe', package / 'RelicUpdater.exe')
+        from update_desktop import write_manifest
+        sys.path.insert(0, str(ROOT))
+        from desktop_runtime import APP_VERSION
+        write_manifest(package, APP_VERSION)
         archive(package, output / 'RelicReconstruction-Windows-x64.zip', package.name)
     checksums = {file.name: hashlib.sha256(file.read_bytes()).hexdigest() for file in output.glob('*.zip')}
     (output / 'SHA256.json').write_text(json.dumps(checksums, indent=2), encoding='utf-8')

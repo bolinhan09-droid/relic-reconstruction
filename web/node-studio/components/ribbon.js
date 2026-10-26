@@ -1,6 +1,7 @@
 import {findNode, definitionFor} from '../core/model.js';
 import {escape, icon, nodeIcon, safeImage} from './icons.js';
 import {getWearMask, wearSeedForNode} from './wear-mask.js';
+import {intentText} from '../core/text-input.js';
 
 export const categories = [
   {id:'creation',label:'创作',color:'creation'}, {id:'ai',label:'AI 协作',color:'ai'},
@@ -12,7 +13,7 @@ export function categoryOf(definition) {
   if (['garment_input','image_reference'].includes(type)) return 'input';
   if (['scene_context','production_context'].includes(type)) return 'context';
   if (['quick_create','precision_edit','blend_create','region_generate','gesture_simulation','battle_simulation'].includes(type)) return 'creation';
-  if (['garment_split','flatten_map','branch_create','branch_merge'].includes(type)) return 'structure';
+  if (['garment_split','garment_flatten','flatten_map','branch_create','branch_merge'].includes(type)) return 'structure';
   if (['production_guide','stencil_export'].includes(type)) return 'production';
   return 'ai';
 }
@@ -25,14 +26,15 @@ const style = nodeStyle;
 export const statusLabel = node => ({draft:'待准备',ready:'可以开始',prepared:'待生成',queued:'排队中',running:'处理中',succeeded:'已有输出',complete:'已有输出',completed:'已有输出',stale:'基于旧版本',failed:'未完成',planned:'待接入',experimental:'实验功能',not_implemented:'待接入',blocked:'待补充资料'}[node.status] || (node.output?'已有输出':'待准备'));
 function capabilityLabel(definition) {return ({available:'可用',experimental:'实验',planned:'待接入',partial:'部分可用'}[definition.capability] || '可用');}
 export function preview(node) {
-  const output = node.output, image = safeImage(output?.candidateImageUrl || output?.imageUrl || node.params?.front?.url || node.params?.reference?.url);
-  const summary = output?.candidateImageUrl ? '新结果待采用' : output?.kind === 'generation_task' ? '创作任务已准备' : output?.report ? '查看检查与建议' : output?.kind === 'guide' ? '制作指导' : output?.kind === 'fabrication' ? '模板文件已准备' : '';
+  const output = node.output, image = safeImage((node.params?.preparationOnly && (output?.flatlayTarget?.url || node.params?.flatlayTarget?.url)) || output?.candidateImageUrl || output?.imageUrl || node.params?.front?.url || node.params?.reference?.url);
+  const text = output?.kind === 'intent' ? intentText(output) : '';
+  const summary = text ? `文字输出 · ${text.replace(/\s+/g,' ').slice(0,55)}${text.length>55?'…':''}` : output?.candidateImageUrl ? '新结果待采用' : output?.kind === 'generation_task' ? '创作任务已准备' : output?.report ? '查看检查与建议' : output?.kind === 'guide' ? '制作指导' : output?.kind === 'fabrication' ? '模板文件已准备' : '';
   const wear = getWearMask(wearSeedForNode(node), {width:640, height:352});
   const surface = wear.surfaceUrl ? `<span class="ns-wear-surface" style="--wear-surface:url('${wear.surfaceUrl}')" aria-hidden="true"></span>` : '';
-  return `<div class="ns-node-preview" data-preview="${escape(node.id)}" data-wear-angle="${Number(wear.angle).toFixed(2)}">${image ? `<div class="ns-wear-reveal" style="--wear-mask:url('${wear.maskUrl}')"><img src="${escape(image)}" alt="${escape(node.label)}的完整输出预览" draggable="false"></div>` : `<div class="ns-node-empty">${icon(nodeIcon(node.type))}<small>${summary?escape(summary):'进入工作区，开始创作'}</small></div>`}${surface}${summary&&image ? `<span class="ns-node-summary">${escape(summary)}</span>` : ''}</div>`;
+  return `<div class="ns-node-preview" data-preview="${escape(node.id)}" data-wear-angle="${Number(wear.angle).toFixed(2)}">${image ? `<div class="ns-wear-reveal" style="--wear-mask:url('${wear.maskUrl}')"><img src="${escape(image)}" alt="${escape(node.label)}的输出预览" draggable="false"></div>` : `<div class="ns-node-empty">${icon(nodeIcon(node.type))}<small>${summary?escape(summary):'双击开始'}</small></div>`}${surface}${summary&&image ? `<span class="ns-node-summary">${escape(summary)}</span>` : ''}</div>`;
 }
 let activePayload = null;
-const payloadIsValid = value => value && ((value.kind === 'insert' && typeof value.type === 'string') || (value.kind === 'move' && typeof value.id === 'string'));
+const payloadIsValid = value => value && ((value.kind === 'insert' && typeof value.type === 'string') || (['move','route'].includes(value.kind) && typeof value.id === 'string'));
 export function readDrop(event) {
   try {
     const value = JSON.parse(event.dataTransfer.getData('application/x-relic-node'));
@@ -50,8 +52,9 @@ export function finishNodeDrag() {
 export function bindNodeDrag(element, payload) {
   element.ondragstart = event => {
     if (element.draggable === false) {event.preventDefault();return;}
-    activePayload = {...payload};
-    event.dataTransfer.setData('application/x-relic-node',JSON.stringify(payload));
+    const rect=element.getBoundingClientRect();
+    activePayload = {...payload,grabX:rect.width?Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)):.5,grabY:rect.height?Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height)):.5};
+    event.dataTransfer.setData('application/x-relic-node',JSON.stringify(activePayload));
     event.dataTransfer.setData('text/plain',payload.id || payload.type);
     event.dataTransfer.effectAllowed = payload.kind === 'insert' ? 'copy' : 'move';
     element.classList.add('dragging');element.closest('.ns-node-wrap')?.classList.add('dragging');
@@ -131,7 +134,7 @@ export function renderRibbon(element, workflow, catalog, handlers) {
   element.querySelector('#addStepHint').onclick=()=>document.getElementById('nodeLibrary').scrollIntoView({block:'nearest',behavior:'smooth'});
 }
 export function renderLibrary(element,catalog,category,onAdd) {
-  element.innerHTML=catalog.filter(def=>categoryOf(def)===category).map(def=>`<button class="ns-bookmark" style="${style(def)}" draggable="true" data-type="${escape(def.type||def.id)}" data-capability="${escape(def.capability)}" title="${escape(def.description)}">${icon(nodeIcon(def.type||def.id))}<strong>${escape(def.label)}</strong><small>${def.placement==='attachment'?'侧插 · ':''}${capabilityLabel(def)}</small></button>`).join('');
+  element.innerHTML=catalog.filter(def=>categoryOf(def)===category).map(def=>`<button class="ns-bookmark" style="${style(def)}" draggable="true" data-type="${escape(def.type||def.id)}" data-capability="${escape(def.capability)}" title="${escape(def.description)}">${icon(nodeIcon(def.type||def.id))}<strong>${escape(def.label)}</strong>${def.capability==='available'?'':`<small>${capabilityLabel(def)}</small>`}</button>`).join('');
   element.querySelectorAll('[data-type]').forEach(button=>{
     button.onclick=()=>onAdd(button.dataset.type);
     bindNodeDrag(button,{kind:'insert',type:button.dataset.type});

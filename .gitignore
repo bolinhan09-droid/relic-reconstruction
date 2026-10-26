@@ -28,13 +28,3 @@ web/assets/deepsea-reference.jpg
 *.zip
 *.exe
 tools/flatlay_model_experiment.py
-
-.model-runtime/
-/portable-data/
-/window-profile/
-/runtime/
-/return/
-*.pfx
-*.p12
-*.pem
-*.key

@@ -34,7 +34,15 @@
   padding: 42px 44px 80px;
   font: 14px/1.7 var(--ns-font, 'Microsoft YaHei UI', sans-serif);
 }
-.ns-ws-intro {max-width: 800px; margin-bottom: 32px; position: relative; padding-left: 18px}
+.ns-ws-intro {max-width: 800px; margin-bottom: 20px; position: relative; padding-left: 18px; display:flex; flex-wrap:wrap; gap:6px 20px; align-items:baseline}
+.ns-ws-help {font-size:12px; color:var(--ws-muted); max-width:66ch}
+.ns-ws-help summary {cursor:pointer; text-underline-offset:3px; min-height:30px; display:list-item}
+.ns-ws-help summary:hover {text-decoration:underline}
+.ns-ws-help summary:focus-visible {outline:2px solid var(--ns-accent); outline-offset:3px}
+.ns-ws-help p {margin:8px 0 0; line-height:1.75}
+.ns-ws-reference-card.is-input {outline:2px solid var(--ns-accent); outline-offset:2px}
+.ns-ws-reference-card .ns-ws-actions {gap:6px; flex-wrap:wrap; margin-top:10px}
+.ns-ws-reference-card .ns-button {font-size:12px; padding:7px 10px; min-height:36px}
 .ns-ws-intro::before {
   content: ''; position: absolute; left: 0; top: 7px; width: 3px; height: 29px;
   background: var(--ns-accent, #9b3b32); transform: skewY(-18deg);

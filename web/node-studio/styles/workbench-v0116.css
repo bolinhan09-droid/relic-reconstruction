@@ -1,0 +1,70 @@
+/* Fixed desktop workbenches. Long controls and reports use explicit pages, never a page below the canvas. */
+.ns-workspace-content,.ns-workspace-mount{height:100%;min-height:0;overflow:hidden!important}
+.ns-node-workspace.has-shared-header{height:100%;min-height:0;max-width:none;width:100%;display:flex;flex-direction:column;padding:12px 16px;overflow:hidden}
+.ns-node-workspace>.ns-ws-body{flex:1;min-height:0;overflow:hidden}
+.ns-node-workspace>.ns-ws-stage{flex:1;min-height:0;height:auto}
+.ns-node-workspace>.ns-ws-status{flex:none;font-size:12px;margin:5px 0 0;max-height:38px;overflow:hidden}
+.ns-node-workspace>.ns-ws-status:empty{display:none}
+.ns-node-workspace>.ns-ws-saved-output{display:none!important}
+.ns-ws-workbench>.ns-ws-body{display:grid!important;grid-template-columns:minmax(0,1fr) clamp(270px,29vw,370px);grid-template-rows:minmax(0,1fr);gap:16px;align-items:stretch}
+.ns-ws-stage,.ns-garment-stage{min-height:0;min-width:0;height:100%;display:flex;flex-direction:column;overflow:hidden!important;position:relative}
+.ns-result-canvas>.ns-ws-selection-board,.ns-ws-stage>.ns-ws-selection-board{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+.ns-ws-selection-board>.ns-ws-canvas-wrap,.ns-result-canvas>.ns-ws-canvas-wrap{flex:1;min-height:0;min-width:0;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.ns-ws-detail-tools{flex:none}
+.ns-ws-stage>.ns-ws-preview,.ns-result-canvas>.ns-ws-preview{flex:1;min-height:0;display:flex;flex-direction:column;margin:0;overflow:hidden}
+.ns-ws-stage>.ns-ws-preview>img,.ns-result-canvas>.ns-ws-preview>img{height:0;min-height:0;flex:1;max-height:none;width:100%;object-fit:contain}
+.ns-ws-stage .ns-ws-preview>figcaption{flex:none;min-height:32px}
+.ns-image-result-caption{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.ns-image-version-picker{display:flex;gap:6px;align-items:center;font-size:12px}.ns-image-version-picker select{max-width:180px;min-height:32px}
+.ns-image-version-picker>span{white-space:nowrap}
+.ns-fixed-special>.ns-ws-body{display:flex;flex-direction:column}
+.ns-fixed-special .ns-ws-blend-bench,.ns-fixed-special .ns-battle3d{flex:1;min-height:0;height:100%;align-items:stretch;grid-template-rows:minmax(0,1fr)}
+.ns-fixed-special .ns-battle3d>section,.ns-fixed-special .ns-ws-blend-control-stage{height:100%;min-height:0;overflow:hidden}
+.ns-fixed-special .ns-battle3d-stage{min-height:0;height:calc(100% - 60px)}
+.ns-paged-panel.ns-paged-panel{display:flex!important;flex-direction:column!important;min-height:0!important;min-width:0;height:100%;overflow:hidden!important;gap:0;position:relative;padding:0!important;scrollbar-gutter:auto}
+.ns-page-nav{display:flex;align-items:center;flex:none;gap:6px;height:42px;padding:4px 10px;border-bottom:1px solid var(--ws-line,#d5d7d0);background:var(--ws-surface,#f5f4ee);font-size:12px;color:var(--ws-muted,#626d69)}
+.ns-page-label{margin-right:auto;font-weight:600;color:var(--ws-ink,#273332)}
+.ns-page-nav .ns-button{min-width:32px;min-height:30px;padding:3px 9px;line-height:1}
+.ns-page-count{font-variant-numeric:tabular-nums;min-width:38px;text-align:center}
+.ns-page-viewport{flex:1;min-height:0;min-width:0;overflow:hidden!important;overscroll-behavior:none;scroll-behavior:auto!important;position:relative;outline:none}
+.ns-page-viewport:focus-visible{outline:2px solid var(--ns-accent,#a63e35);outline-offset:-2px}
+.ns-page-content{display:flow-root;padding:14px;overflow:visible;height:auto;min-width:0}
+.ns-page-content>.ns-ws-field,.ns-page-content>.ns-ws-actions,.ns-page-content>details,.ns-page-content>section{margin-bottom:16px}
+.ns-page-content .ns-input{max-width:100%;box-sizing:border-box}.ns-page-content textarea{resize:none;max-height:155px}
+.ns-fixed-actions{flex:none;border-top:1px solid var(--ws-line,#d5d7d0);padding:12px;background:var(--ws-surface,#f5f4ee);z-index:2}
+.ns-fixed-actions .ns-ws-actions{margin:0;display:flex;flex-wrap:wrap;gap:8px}.ns-fixed-actions .is-primary{flex:1;min-height:42px}
+.ns-fixed-actions .ns-kit-generate{padding:0}.ns-fixed-actions .ns-kit-gate{max-height:52px;overflow:hidden}
+.ns-result-tabs{flex:none;display:flex;gap:8px;padding:4px 0 10px}.ns-result-tabs button{min-height:36px;font-size:13px}
+.ns-result-tabs button[aria-selected=true]{background:var(--ws-ink,#293735);color:var(--ws-paper,#faf7f0)}
+.ns-result-canvas,.ns-result-report{flex:1;min-height:0;height:100%;overflow:hidden}.ns-result-canvas{display:flex;flex-direction:column}
+.ns-result-report .ns-ws-output{display:block;border:0;margin:0;padding:0;max-height:none;overflow:visible}
+.ns-result-report .ns-ws-result-image{max-height:50vh;width:100%;object-fit:contain}
+.ns-ws-document>.ns-ws-body{max-width:100%;width:100%}.ns-ws-document .ns-page-content{max-width:980px;margin:auto;padding:20px 28px}
+.ns-garment-bench{height:100%;min-height:0;overflow:hidden;grid-template-rows:minmax(0,1fr)}
+.ns-garment-stage .ns-ws-canvas-wrap{min-height:0;flex:1;display:flex;justify-content:center;align-items:center;overflow:hidden}
+.ns-garment-stage canvas{max-height:100%;max-width:100%;width:auto;object-fit:contain}
+.ns-making-kit .ns-kit-stage{height:100%}.ns-making-kit .ns-kit-panel{padding:0;overflow:hidden!important}
+.ns-making-kit .ns-kit-image-content .ns-ws-preview>img{max-height:calc(100dvh - 280px);width:100%;object-fit:contain}
+.ns-making-kit .ns-kit-generate{flex-shrink:0}
+[hidden]{display:none!important}
+.ns-paged-panel[hidden],.ns-node-workspace [hidden],.node-embed [hidden]{display:none!important}
+@media(max-width:920px){.ns-ws-workbench>.ns-ws-body{grid-template-columns:minmax(0,1fr) 260px}.ns-node-workspace.has-shared-header{padding:8px}.ns-page-content{padding:10px}.ns-ws-workbench>.ns-ws-body{gap:8px}}
+/* Embedded paint controls keep the canvas and tools in one frame. */
+.node-embed .control-panel.ns-paged-panel{height:100%!important;overflow:hidden!important}
+.node-embed,.node-embed .gm-paged :is(button,input,select,h2,h3){font-family:'Segoe UI','Microsoft YaHei',sans-serif}
+.node-embed .control-panel .ns-page-content{padding:4px}.node-embed .control-panel .step-content{padding:8px!important}
+.node-embed .ns-page-content .surface-workspace{position:relative!important;inset:auto!important;width:auto!important}
+.node-embed #garmentMappingDialog.gm-paged{height:calc(100vh - 12px)!important;overflow:hidden!important;display:flex;flex-direction:column;padding:14px}
+.node-embed #garmentMappingDialog.gm-paged .gm-heading{flex:none}.node-embed .gm-paged .gm-heading p{display:none}
+.node-embed .gm-paged .gm-body{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;flex:1;min-height:0;overflow:hidden;padding:0}
+.node-embed .gm-main-stage{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.node-embed .gm-main-stage .gm-boards{flex:1;min-height:0;margin:0;overflow:hidden}
+.node-embed .gm-main-stage .gm-board{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.node-embed .gm-main-stage .gm-image-wrap{min-height:0;flex:1;height:auto;display:flex;align-items:center;justify-content:center}
+.node-embed .gm-main-stage canvas{max-height:100%!important;width:auto!important;max-width:100%;object-fit:contain}
+.node-embed .gm-main-stage .gm-board-foot{display:none}
+.node-embed .gm-result-page{flex:1;min-height:0}
+.node-embed .gm-paged .gm-settings{display:block}.node-embed .gm-paged .gm-settings>div{margin-bottom:12px}
+.node-embed .gm-paged .gm-method,.node-embed .gm-paged .gm-suggest-tools,.node-embed .gm-paged .gm-point-tools{display:flex;flex-wrap:wrap;margin:14px 0}
+.node-embed .gm-paged .gm-submit{display:block;margin:0}.node-embed .gm-paged .gm-submit p{display:none}.node-embed .gm-paged #gmCreateMapping{width:100%}
+.node-embed .gm-paged .gm-result-image img{height:auto;max-height:55vh;width:100%;object-fit:contain}

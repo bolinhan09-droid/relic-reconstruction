@@ -1,5 +1,5 @@
 import {api, upload} from './core/api.js';
-import {copy,uid,makeNode,findNode,definitionFor,insertNode,detachNode,moveNode,moveNodeToGap,patchNode,commitNode,restoreVersion,upstreamOutput,assertWorkflow,markAfter,getLanes,laneForNode,createBranchGroup,addBranch as addBranchRoute,renameBranch as renameBranchRoute,precedingNodeIds} from './core/model.js';
+import {copy,uid,makeNode,findNode,definitionFor,insertNode,detachNode,moveNode,moveNodeToGap,patchNode,commitNode,restoreVersion,upstreamOutput,assertWorkflow,markAfter,getLanes,laneForNode,createBranchGroup,addBranch as addBranchRoute,renameBranch as renameBranchRoute,precedingNodeIds,placeNodeOnCanvas,insertNodeOnCanvas,positionRoute,makeStandardWorkflow} from './core/model.js';
 import {WorkflowPersistence} from './core/persistence.js';
 import {GenerationTracker} from './core/job-tracker.js';
 import {escape,icon,safeImage} from './components/icons.js';
@@ -7,18 +7,58 @@ import {categories,categoryOf,statusLabel,renderLibrary,readDrop,bindNodeDrag,fi
 import {mountWorkspace} from './workspaces/index.js';
 import {openLegacyWorkspace} from './adapters/legacy-bridge.js';
 import {createEntryExperience} from './components/entry-experience.js';
-import {renderGraph,createGraphViewport} from './components/graph-canvas.js';
+import {renderGraph,graphLayout,createGraphViewport} from './components/graph-canvas.js';
+import {mountGlobalAiSettings} from './components/global-ai-settings.js';
+import {mountApiGuide} from './components/api-guide.js';
+import {createGuidedPractice} from './components/guided-practice.js';
+import {appendMakingRoute} from './core/making-route.js';
 
 const $=id=>document.getElementById(id);
 const entryFrontPlaceholder=$('frontPreview').innerHTML;
 let catalog=[],workflow=null,category='creation',front=null,back=null,workspace=null,legacy=null,currentWorkspaceId=null,toastTimer,booting=false,runBusy=false,pendingStudioRender=false,workspaceLifetime=null,workspaceTransition=0;
-let catalogReady=false,projectOpening=false,historyRequest=0;
+let catalogReady=false,projectOpening=false,historyRequest=0,addingPictures=false;
+let workspaceSaveTask=null,workspaceEntryRequest=0;
 const uploadTickets={front:0,back:0},uploadPending={front:false,back:false};
-const entryExperience=createEntryExperience({openProject,onRetryHistory:refreshEntryHistory});
+const entryExperience=createEntryExperience({openProject,deleteProject,onRetryHistory:refreshEntryHistory});
 const persistence=new WorkflowPersistence(api,text=>$('saveState').textContent=text);
-const tracker=new GenerationTracker({api,getWorkflow:()=>workflow,updateWorkflow:next=>changed(next),onUpdate:(nodeId,output)=>{window.dispatchEvent(new CustomEvent('relic-node-job-updated',{detail:{nodeId,output}}));if(currentWorkspaceId===nodeId)$('workspaceStatus').textContent=output.jobStatus==='succeeded'?'新结果待采用':output.jobStatus||'任务已更新';},notify:message=>notify(message)});
+const globalAiSettings=mountGlobalAiSettings({api,notify});
+const apiGuide=mountApiGuide({openSettings:section=>globalAiSettings.open(section)});
+const tracker=new GenerationTracker({api,getWorkflow:()=>workflow,updateWorkflow:async next=>{changed(next);await saveWorkflow();},onUpdate:(nodeId,output)=>{window.dispatchEvent(new CustomEvent('relic-node-job-updated',{detail:{nodeId,output}}));if(currentWorkspaceId===nodeId)$('workspaceStatus').textContent=output.jobStatus==='succeeded'?'已显示新结果':output.jobStatus||'任务已更新';},notify:message=>notify(message)});
 const reduced=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 const graphViewport=createGraphViewport($('ribbonViewport'),$('ribbon'),{onChange:zoom=>{if($('zoomValue'))$('zoomValue').textContent=Math.round(zoom*100)+'%';}});
+const practice=createGuidedPractice({getState:practiceState,prepare:preparePractice,openNode:enterWorkspace,saveEditor:()=>saveCurrentWorkspace(true),leaveEditor:leaveWorkspace,focusNode,notify});
+
+function practiceState(){
+  let editor={ready:false,strokeCount:0};
+  try{editor=legacy?.iframe?.contentWindow?.RelicNodeWorkspace?.getPracticeState?.()||editor;}catch{/* An iframe may be closing. */}
+  return{workflow,workspaceId:currentWorkspaceId,ready:!!legacy?.ready&&editor.ready,strokeCount:editor.strokeCount||0,unsaved:!!legacy?.hasUnsavedChanges?.()};
+}
+async function preparePractice(savedId){
+  if(!catalogReady||booting||projectOpening||runBusy||addingPictures)throw Error('创作台正在准备，请稍后开始练习');
+  projectOpening=true;
+  try{
+    await leaveWorkspace(false);if(currentWorkspaceId)throw Error('请先保存当前工作区，再开始练习');
+    if(workflow)await saveWorkflow();
+    let next;
+    if(savedId){
+      try{const response=await api('GET',`/api/node-studio/workflows/${encodeURIComponent(savedId)}`);const candidate=response.workflow||response;
+        if(candidate.context?.guidedPractice==='v1'&&candidate.nodes?.some(n=>n.type==='precision_edit')&&candidate.nodes.some(n=>n.type==='production_guide'))next=candidate;
+      }catch(error){if(error.status!==404)throw error;}
+    }
+    if(!next){
+      const image=await fetch('/resources/garments/demo_coat_front.png');if(!image.ok)throw Error('示例服装暂不可用，请重试');
+      const asset={...await upload(new File([await image.blob()],'新手练习服装.png',{type:'image/png'})),name:'新手练习服装'};
+      const input=makeNode('garment_input',catalog,{front:asset,back:null});input.output={kind:'garment',imageUrl:asset.url||asset.imageUrl,reference:asset,front:asset,back:null};input.status='completed';
+      const edit=makeNode('precision_edit',catalog),making=makeNode('production_guide',catalog);
+      const initial={schemaVersion:1,branches:[],routes:[],selectedLaneId:'main',title:'新手练习',nodes:[input,edit,making],order:[input.id,edit.id,making.id],stash:[],selectedNodeId:edit.id,context:{guidedPractice:'v1'},assets:[asset]};
+      const response=await api('POST','/api/node-studio/workflows',initial);next=response.workflow||response;
+    }
+    assertWorkflow(next);workflow=next;persistence.bind(workflow);entryExperience.cancelTransition();
+    $('entry').hidden=true;$('studio').hidden=false;renderStudio();renderDock();graphViewport.fit();
+    for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();
+    localStorage.setItem('relic-node-last-project',workflow.id);$('saveState').textContent='练习已保存到本机';return practiceState();
+  }finally{projectOpening=false;}
+}
 function notify(message){clearTimeout(toastTimer);$('toast').textContent=message;$('toast').hidden=false;toastTimer=setTimeout(()=>$('toast').hidden=true,4300);}
 function selected(){return workflow&&findNode(workflow,workflow.selectedNodeId);}
 function saveSucceeded(saved,replace){if(workflow?.id!==saved.id)return;if(replace)workflow=saved;else workflow.revision=saved.revision;}
@@ -33,11 +73,14 @@ function updateSelection(){
   $('ribbon').querySelectorAll('[data-node-id]').forEach(w=>w.classList.toggle('is-selected',w.dataset.nodeId===node?.id));
   $('ribbon').querySelectorAll('[data-node],[data-attachment]').forEach(b=>{const yes=(b.dataset.node||b.dataset.attachment)===node?.id;b.setAttribute('aria-pressed',String(yes));b.classList.toggle('selected',yes);});
   $('ribbon').querySelectorAll('[data-route]').forEach(b=>b.classList.toggle('is-active',b.dataset.route===lane?.id));
-  $('selectionTitle').textContent=node?.label||'选择一个节点';$('selectionDescription').textContent=def?.description||'';
+  $('selectionTitle').textContent=node?.label||'选择一个节点';$('selectionDescription').textContent=node?statusLabel(node):'';
   const junction=['branch_create','branch_merge'].includes(node?.type),index=lane?.order.indexOf(node?.id)??-1;
-  $('detachButton').disabled=!node||node.type==='garment_input'||junction;
-  $('leftButton').disabled=!node||junction||index<=(lane?.id==='main'?1:0);
-  $('rightButton').disabled=!node||junction||index<0||index>=lane.order.length-1;
+  const mainInput=node?.type==='garment_input'&&workflow.order[0]===node.id;
+  $('detachButton').disabled=!node||mainInput||junction;
+  $('floatButton').disabled=!node||mainInput||junction;
+  $('connectButton').disabled=!node||mainInput||junction||def?.placement==='attachment';
+  $('leftButton').disabled=!node||junction||node.type==='garment_input'||index<=(lane?.id==='main'?1:0);
+  $('rightButton').disabled=!node||junction||node.type==='garment_input'||index<0||index>=lane.order.length-1;
   if($('branchButton'))$('branchButton').disabled=!node||node.type==='branch_create'||!laneForNode(workflow,node.id);
 }
 function renderStudio(){
@@ -46,7 +89,7 @@ function renderStudio(){
   const layout=renderGraph($('ribbon'),workflow,catalog,{select,selectLane,enter:enterWorkspace,drop:dropNode});graphViewport.setBounds(layout);updateSelection();
   $('stashCount').textContent=String((workflow.stash||[]).length);
   renderShelf();
-  $('workflowStats').textContent=`${getLanes(workflow).reduce((sum,l)=>sum+l.order.length,0)} 个步骤 · ${(workflow.branches||[]).length} 条分支 · 本机保存`;
+  $('workflowStats').textContent=`${getLanes(workflow).reduce((sum,l)=>sum+l.order.length,0)} 个节点 · ${(workflow.routes||[]).length+1} 条独立路线`;
 }
 function renderDock(){
   $('categoryTabs').innerHTML=categories.map(cat=>`<button class="ns-category-tab ${category===cat.id?'active':''}" data-category="${cat.id}" role="tab" aria-selected="${category===cat.id}">${cat.label}</button>`).join('');
@@ -84,12 +127,61 @@ function attachExisting(current,id,hostId,slot){
   if((def.slot||'bottom')!==slot)throw Error(slot==='top'?'这里接参考与设定，请放到下方 AI 插槽。':'这里接 AI 协作，请放到上方参考插槽。');
   if(Object.values(node.attachments||{}).some(ids=>ids.length))throw Error('请先撤下这个节点携带的附件。');
   for(const item of next.nodes)for(const side of ['top','bottom'])if(item.attachments?.[side])item.attachments[side]=item.attachments[side].filter(value=>value!==id);
-  next.order=next.order.filter(value=>value!==id);for(const lane of next.branches||[])lane.order=lane.order.filter(value=>value!==id);next.stash=(next.stash||[]).filter(value=>value!==id);host.attachments[slot].push(id);next.selectedNodeId=id;next.selectedLaneId=laneForNode(next,hostId).id;markAfter(next,hostId);return next;
+  next.order=next.order.filter(value=>value!==id);for(const lane of [...(next.routes||[]),...(next.branches||[])])lane.order=lane.order.filter(value=>value!==id);next.routes=(next.routes||[]).filter(lane=>lane.order.length);next.stash=(next.stash||[]).filter(value=>value!==id);host.attachments[slot].push(id);next.selectedNodeId=id;next.selectedLaneId=laneForNode(next,hostId).id;markAfter(next,hostId);return next;
+}
+function openCanvasPosition(){
+  const layout=graphLayout(workflow),low=Math.max(100,...layout.nodes.map(node=>node.y+node.h))+100;
+  return{x:64,y:low};
+}
+function floatSelected(){
+  try{if(!selected())return;changed(placeNodeOnCanvas(workflow,workflow.selectedNodeId,openCanvasPosition()));focusNode();notify('已放到画布，输出保留');}catch(error){notify(error.message);}
+}
+function openConnectDialog(){
+  const node=selected();if(!node)return;
+  const options=[];
+  for(const lane of getLanes(workflow)){
+    const min=lane.id==='main'||['garment_input','image_reference'].includes(findNode(workflow,lane.order[0])?.type)?1:0;
+    for(let at=min;at<=lane.order.length;at++){
+      if(lane.order[at-1]===node.id||lane.order[at]===node.id||findNode(workflow,lane.order[at-1])?.type==='branch_create')continue;
+      const before=findNode(workflow,lane.order[at-1]),label=`${lane.label||'路线'} · ${before?'接在「'+before.label+'」之后':'路线起点'}`;
+      options.push({laneId:lane.id,at,label});
+    }
+  }
+  $('connectTarget').innerHTML=options.map((o,i)=>`<option value="${i}">${escape(o.label)}</option>`).join('');
+  $('confirmConnect').disabled=!options.length;
+  $('confirmConnect').onclick=()=>{try{const target=options[Number($('connectTarget').value)];if(!target)return;changed(moveNodeToGap(workflow,node.id,target.at,catalog,target.laneId));$('connectDialog').close();focusNode(node.id);notify('节点已接入');}catch(error){notify(error.message);}};
+  $('connectDialog').showModal();
+}
+async function addPictureFiles(files,type){
+  if(!workflow||addingPictures||!files?.length)return;
+  addingPictures=true;const projectId=workflow.id;
+  $('addGarmentButton').disabled=true;$('addReferenceButton').disabled=true;
+  try{
+    for(const file of Array.from(files)){
+      const asset={...await upload(file),name:file.name};
+      if(workflow?.id!==projectId)throw Error('创作已切换，请在当前画布重新添加图片');
+      let next=insertNodeOnCanvas(workflow,type,catalog,openCanvasPosition()),node=findNode(next,next.selectedNodeId);
+      if(type==='garment_input'){
+        node.params={...node.params,front:asset,back:null};
+        node.output={kind:'garment',imageUrl:asset.url||asset.imageUrl,reference:asset,front:asset,back:null};
+      }else{
+        node.params={...node.params,references:[asset],activeReferenceIndex:0};
+        node.output={kind:'reference',imageUrl:asset.url||asset.imageUrl,reference:asset,references:[asset],activeReferenceIndex:0};
+      }
+      node.status='completed';next.assets=[...(next.assets||[]),asset];
+      const route=next.routes.find(l=>l.order.includes(node.id));if(route)route.label=file.name.replace(/\.[^.]+$/,'').slice(0,40)||node.label;
+      changed(next);
+    }
+    await saveWorkflow();focusNode();notify('图片已加入，可从每张图片继续创作');
+  }catch(error){notify(error.message);}finally{addingPictures=false;$('addGarmentButton').disabled=false;$('addReferenceButton').disabled=false;}
 }
 function forkFromSelected(position={}){try{const node=selected();let host=laneForNode(workflow,node?.id)?node?.id:workflow.nodes.find(n=>Object.values(n.attachments||{}).some(ids=>ids.includes(node?.id)))?.id;if(position.laneId){const lane=getLanes(workflow).find(l=>l.id===position.laneId);host=position.afterId||lane?.order[(position.at??lane.order.length)-1];if(!host)throw Error('请把分支放在这条路线的一个步骤之后。');}if(!host)throw Error('先选择一个已接入路线的节点。');changed(createBranchGroup(workflow,host,catalog));graphViewport.fit();notify('原后续保留在方案 A；方案 B 从这个位置独立探索。');}catch(error){notify(error.message);}}
 function addNode(type,position={}){
   try{
     if(!workflow)return;
+    if(position.canvas||(['garment_input','image_reference'].includes(type)&&!position.hostId&&!position.laneId&&!Number.isInteger(position.at))){
+      changed(insertNodeOnCanvas(workflow,type,catalog,position.canvas||openCanvasPosition()));focusNode();notify('节点已放到画布');return;
+    }
     if(type==='branch_create'){forkFromSelected(position);return;}
     if(type==='branch_merge'){const lane=currentLane(),fork=lane.forkId||selected()?.params?.forkId;const merge=workflow.nodes.find(n=>n.type==='branch_merge'&&n.params?.forkId===fork);if(merge){select(merge.id);focusNode(merge.id);notify('这组路线已经有合拢节点，双击查看候选。');}else notify('先加入分支节点，合拢节点会一起放在路线末端。');return;}
     const def=definitionFor(catalog,type),node=selected();let afterId=node?.id;
@@ -106,6 +198,11 @@ function addNode(type,position={}){
 function dropNode(data,position={}){
   try{
     if(!workflow||!data)return;
+    if(position.canvas){
+      if(data.kind==='route'){changed(positionRoute(workflow,data.id,position.canvas));return;}
+      if(data.kind==='insert')return addNode(data.type,position);
+      changed(placeNodeOnCanvas(workflow,data.id,position.canvas));notify('已放到画布，输出保留');return;
+    }
     const def=definitionFor(catalog,data.type||findNode(workflow,data.id)?.type);
     if(!def)throw Error('这个节点暂未登记。');
     if(!position.hostId&&def.placement==='attachment')throw Error('这张参考卡请放进主线节点的上方侧槽。');
@@ -116,17 +213,12 @@ function dropNode(data,position={}){
     }
   }catch(error){notify(error.message);}finally{finishNodeDrag();}
 }
-// Resolve a background drop from the actual lane under the pointer, never from
-// the previously selected route. Nested route rectangles take priority.
-function backgroundDropPosition(event){
-  const hits=[...$('ribbon').querySelectorAll('[data-route]')].map(el=>({el,box:el.getBoundingClientRect()})).filter(({box})=>event.clientX>=box.left&&event.clientX<=box.right&&event.clientY>=box.top&&event.clientY<=box.bottom).sort((a,b)=>a.box.width*a.box.height-b.box.width*b.box.height);
-  const route=hits[0]?.el.dataset.route;
-  const ends=[...$('ribbon').querySelectorAll('.ns-graph-end')].find(el=>{const b=el.getBoundingClientRect();return Math.abs(event.clientY-(b.top+b.height/2))<70&&Math.abs(event.clientX-(b.left+b.width/2))<90;});
-  const laneId=route||ends?.dataset.lane;if(!laneId)return null;
-  const lane=getLanes(workflow).find(l=>l.id===laneId);if(!lane)return null;
-  let at=lane.order.length;
-  for(let i=0;i<lane.order.length;i++){const b=$('ribbon').querySelector(`[data-node-id="${lane.order[i]}"]`)?.getBoundingClientRect();if(b&&event.clientX<b.left+b.width/2){at=i;break;}}
-  return {laneId,at};
+// Empty space always means independent placement. Only a visible card, gap or
+// connector can connect steps; being near a route never changes dependencies.
+function backgroundDropPosition(event,data){
+  const point=graphViewport.clientToWorld(event.clientX,event.clientY);
+  if(data.kind==='route')return{canvas:{x:Math.max(24,point.x-54),y:Math.max(56,point.y+25)}};
+  return{canvas:{x:Math.max(24,point.x-340*(data.grabX??.5)),y:Math.max(56,point.y-220*(data.grabY??.5))}};
 }
 async function setEntryFile(file,side){
   if(booting||projectOpening)return;
@@ -147,24 +239,42 @@ async function start(){
     input.output={kind:'garment',imageUrl:front.url||front.imageUrl,reference:front,front,back};input.status='completed';
     const scene=makeNode('scene_context',catalog,{character:'',scene:'',bloodColor:'#782c2b',canonStatus:'user_defined'});
     input.attachments.top.push(scene.id);
-    const initial={schemaVersion:1,branches:[],selectedLaneId:'main',title:'我的战损创作',nodes:[input,scene],order:[input.id],stash:[],selectedNodeId:input.id,context:{},assets:[front,...(back?[back]:[])]};
+    let initial={schemaVersion:1,branches:[],routes:[],selectedLaneId:'main',title:'我的战损创作',nodes:[input,scene],order:[input.id],stash:[],selectedNodeId:input.id,context:{},assets:[front,...(back?[back]:[])]};
+    if(document.querySelector('[name="workflowStart"]:checked')?.value!=='blank')initial=makeStandardWorkflow(initial,catalog);
     const result=await api('POST','/api/node-studio/workflows',initial);
     workflow=result.workflow||result;persistence.bind(workflow);
     if(!workflow.nodes?.length)throw Error('工作流创建未完成。');
     await entryExperience.transitionToStudio({source:$('frontPreview').querySelector('img'),show:()=>{$('entry').hidden=true;$('studio').hidden=false;renderStudio();renderDock();},target:()=>$('ribbon').querySelector('.ns-wear-reveal img')||$('ribbon').querySelector('.ns-node-preview')});
-    localStorage.setItem('relic-node-last-project',workflow.id);$('saveState').textContent='已保存到本机';notify('服装已就位。从下方选择第一个创作工作区。');
+    graphViewport.fit();localStorage.setItem('relic-node-last-project',workflow.id);$('saveState').textContent='已保存到本机';notify(initial.order.length>1?'标准流程已就位，双击节点开始':'空白画布已准备');
   }catch(error){entryExperience.cancelTransition();notify(error.message);$('entryStatus').textContent=error.message;$('entry').hidden=false;$('studio').hidden=true;}finally{booting=false;$('startButton').disabled=!front;$('startButton').removeAttribute('aria-busy');}
 }
 function abortedWorkspace(){return new DOMException('这个工作区已关闭或切换，旧操作没有继续。','AbortError');}
 function isWorkspaceActive(scope){return !!scope&&workspaceLifetime===scope&&!scope.controller.signal.aborted&&scope.ticket===workspaceTransition&&workflow?.id===scope.workflowId&&currentWorkspaceId===scope.nodeId&&!!findNode(workflow,scope.nodeId);}
 function assertWorkspaceActive(scope){if(!isWorkspaceActive(scope))throw abortedWorkspace();}
+async function saveCurrentWorkspace(announce=false){
+  if(workspaceSaveTask)return workspaceSaveTask;
+  const scope=workspaceLifetime,currentLegacy=legacy,currentWorkspace=workspace;
+  if(!scope||!isWorkspaceActive(scope))return;
+  const task=(async()=>{
+    $('saveWorkspace').disabled=true;$('workspaceStatus').textContent='正在保存…';
+    try{
+      if(currentLegacy?.save)await currentLegacy.save();else await currentWorkspace?.save?.();
+      assertWorkspaceActive(scope);await saveWorkflow();assertWorkspaceActive(scope);
+      $('workspaceStatus').textContent='已保存';if(announce)notify('创作已保存到本机。');
+    }finally{if(isWorkspaceActive(scope))$('saveWorkspace').disabled=false;}
+  })();
+  workspaceSaveTask=task;
+  try{return await task;}finally{if(workspaceSaveTask===task)workspaceSaveTask=null;}
+}
 function workspaceContext(id,scope){
   const node=findNode(workflow,id),definition=definitionFor(catalog,node.type);
   const active=()=>assertWorkspaceActive(scope);
   const saveScoped=async()=>{if(!(scope.closing&&workflow?.id===scope.workflowId))active();return saveWorkflow();};
   const scopedApi=async(...args)=>{active();const result=await api(...args);active();return result;};
-  return {workflow,node,definition,catalog,api:scopedApi,signal:scope.controller.signal,isActive:()=>isWorkspaceActive(scope),notify:message=>{if(isWorkspaceActive(scope))notify(message);},
+  return {workflow,node,definition,catalog,api:scopedApi,signal:scope.controller.signal,headerActions:$('workspaceActions'),setStatus:message=>{if(isWorkspaceActive(scope))$('workspaceStatus').textContent=message;},isActive:()=>isWorkspaceActive(scope),notify:message=>{if(isWorkspaceActive(scope))notify(message);},
     getWorkflow:()=>{active();return copy(workflow);},
+    startMaking:async()=>{active();await saveCurrentWorkspace();active();const result=appendMakingRoute(workflow,id,catalog);changed(result.workflow,{render:false});await saveScoped();active();notify(result.created?'制作路线已接好':'打开已有制作路线');await enterWorkspace(result.firstId);return result.firstId;},
+    openNode:async nodeId=>{active();if(!findNode(workflow,nodeId))throw Error('这个节点已不在当前方案中');await saveCurrentWorkspace();active();return enterWorkspace(nodeId);},
     setResearchConsent:async consent=>{
       active();
       if(!consent||typeof consent!=='object'||Object.keys(consent).some(key=>!['sendThumbnail','provider','baseUrl','grantedAt'].includes(key))||typeof consent.sendThumbnail!=='boolean')throw Error('看图授权格式不正确。');
@@ -185,6 +295,15 @@ function workspaceContext(id,scope){
       if(existing){notify('AI 搜索已接好，返回总览后双击它即可开始。');return existing.id;}
       const next=insertNode(workflow,'character_research',catalog,{hostId,slot:'top'}),newId=next.selectedNodeId;changed(next);await saveScoped();notify('AI 搜索已接好，返回总览后双击它即可开始。');return newId;
     },
+    startReferenceRoute:async(nodeId=id,referenceIndex)=>{
+      active();const reference=findNode(workflow,nodeId);
+      if(reference?.type!=='image_reference')throw Error('请选择图片参考节点');
+      if(Number.isInteger(referenceIndex)&&referenceIndex!==reference.params?.activeReferenceIndex)throw Error('请先选定当前参考图片');
+      const lane=laneForNode(workflow,nodeId);
+      if(!lane||lane.forkId||lane.order[0]!==nodeId)changed(placeNodeOnCanvas(workflow,nodeId,openCanvasPosition()),{render:false});
+      await saveScoped();active();await leaveWorkspace();select(nodeId);focusNode(nodeId);category='creation';renderDock();notify('参考图已成为独立起点');
+      return nodeId;
+    },
     addBranch:async(forkId,label)=>{active();changed(addBranchRoute(workflow,forkId,label));await saveScoped();active();return copy(workflow);},
     renameBranch:async(branchId,label)=>{active();changed(renameBranchRoute(workflow,branchId,String(label||'未命名路线').trim().slice(0,40)));await saveScoped();active();return copy(workflow);},
     focusBranch:async(branchId)=>{active();await leaveWorkspace();selectLane(branchId);graphViewport.focus(branchId);},
@@ -199,12 +318,17 @@ function workspaceContext(id,scope){
 }
 async function enterWorkspace(id=workflow?.selectedNodeId){
   if(!workflow||runBusy)return;const node=findNode(workflow,id);if(!node)return;
+  const entryRequest=++workspaceEntryRequest;
+  if(legacy?.canSaveOnLeave?.()&&legacy?.hasUnsavedChanges?.()){
+    try{await saveCurrentWorkspace();}catch(error){if(error.name!=='AbortError')notify(error.message);return;}
+    if(entryRequest!==workspaceEntryRequest)return;
+  }
   const scope={controller:new AbortController(),ticket:++workspaceTransition,workflowId:workflow.id,nodeId:id,closing:false};
   await leaveWorkspace(false,scope.ticket);
   if(scope.ticket!==workspaceTransition||workflow?.id!==scope.workflowId||!findNode(workflow,id)){scope.controller.abort();return;}
   workspaceLifetime=scope;workflow.selectedNodeId=id;currentWorkspaceId=id;
   const def=definitionFor(catalog,node.type),source=$('ribbon').querySelector(`[data-preview="${id}"]`)||$('ribbon').querySelector(`[data-attachment="${id}"]`),rect=source?.getBoundingClientRect();
-  $('workspaceTitle').textContent=node.label;$('workspaceSubtitle').textContent=def.description||'';$('workspaceStatus').textContent=statusLabel(node);$('workspaceContent').innerHTML='<div class="ns-workspace-loading">正在打开工作区…</div>';$('workspace').hidden=false;
+  $('workspaceTitle').textContent=node.label.replace(/[。．.]+$/,'');$('workspaceSubtitle').textContent='';$('workspaceStatus').textContent=statusLabel(node);$('workspaceActions').replaceChildren();$('saveWorkspace').disabled=false;$('workspaceContent').innerHTML='<div class="ns-workspace-loading">正在打开工作区…</div>';$('workspace').hidden=false;document.body.classList.add('ns-in-workspace');
   if(rect&&!reduced())$('workspace').animate([{opacity:0,transform:`translate(${rect.left+rect.width/2-innerWidth/2}px,${rect.top+rect.height/2-innerHeight/2}px) scale(.2)`},{opacity:1,transform:'translate(0,0) scale(1)'}],{duration:360,easing:'cubic-bezier(.2,.75,.25,1)'});
   const mountHost=document.createElement('div');mountHost.className='ns-workspace-mount';$('workspaceContent').replaceChildren(mountHost);
   try{
@@ -216,6 +340,13 @@ async function enterWorkspace(id=workflow?.selectedNodeId){
   }catch(error){if(error.name==='AbortError'||!isWorkspaceActive(scope))return;mountHost.innerHTML=`<div class="ns-error"><h3>这个工作区未能打开</h3><p>${escape(error.message)}</p><button class="ns-button" id="retryWorkspace">重新打开</button></div>`;mountHost.querySelector('#retryWorkspace').onclick=()=>enterWorkspace(id);}
 }
 async function leaveWorkspace(animate=true,transition=null){
+  if(transition===null){
+    const request=++workspaceEntryRequest;
+    if(legacy?.canSaveOnLeave?.()&&legacy?.hasUnsavedChanges?.()){
+      try{await saveCurrentWorkspace();}catch(error){if(error.name!=='AbortError')notify(error.message);return;}
+      if(request!==workspaceEntryRequest)return;
+    }
+  }
   const ticket=transition??++workspaceTransition,scope=workspaceLifetime,leaving=workspace,leavingLegacy=legacy;
   workspaceLifetime=null;workspace=null;legacy=null;currentWorkspaceId=null;
   if(scope){scope.closing=true;scope.controller.abort();}
@@ -225,7 +356,7 @@ async function leaveWorkspace(animate=true,transition=null){
   if(!$('workspace').hidden){
     if(animate&&!reduced())await $('workspace').animate([{opacity:1,transform:'scale(1)'},{opacity:0,transform:'scale(.96)'}],{duration:150,easing:'ease-in'}).finished;
     if(ticket!==workspaceTransition)return;
-    $('workspace').hidden=true;renderStudio();focusNode();saveWorkflow().catch(error=>notify(error.message));
+    $('workspace').hidden=true;document.body.classList.remove('ns-in-workspace');$('workspaceActions').replaceChildren();renderStudio();focusNode();saveWorkflow().catch(error=>notify(error.message));
   }
 }
 async function openLegacy(mode,id,scope){
@@ -238,7 +369,8 @@ async function openLegacy(mode,id,scope){
       const snapshot=input.projectSnapshot||{};
       input.projectSnapshot={...snapshot,brushSettings:{...snapshot.brushSettings,color:scene.bloodColor},bloodSettings:{...snapshot.bloodSettings,color:scene.bloodColor}};
     }
-    legacy=openLegacyWorkspace($('workspaceContent'),{mode,workflow:copy(workflow),node:{...copy(node),config:copy(node.params)},input,onCommit:async output=>{assertWorkspaceActive(scope);changed(commitNode(workflow,id,output),{render:false});await saveWorkflow();assertWorkspaceActive(scope);await leaveWorkspace();notify('画布输出已保存到当前节点。');},onClose:()=>{if(isWorkspaceActive(scope))return leaveWorkspace();},notify:message=>{if(isWorkspaceActive(scope))notify(message);}});
+    $('saveWorkspace').disabled=true;
+    legacy=openLegacyWorkspace($('workspaceContent'),{mode,workflow:copy(workflow),node:{...copy(node),config:copy(node.params)},input,headerActions:$('workspaceActions'),onStatus:message=>{if(isWorkspaceActive(scope))$('workspaceStatus').textContent=message;},onReady:ready=>{if(isWorkspaceActive(scope))$('saveWorkspace').disabled=!ready;},onCommit:async output=>{assertWorkspaceActive(scope);changed(commitNode(workflow,id,output),{render:false});await saveWorkflow();assertWorkspaceActive(scope);$('workspaceStatus').textContent='已保存';},onClose:()=>{if(isWorkspaceActive(scope))return leaveWorkspace();},notify:message=>{if(isWorkspaceActive(scope))notify(message);}});
   }catch(error){if(error.name!=='AbortError')notify(error.message);}
 }
 async function runNode(id,options,scope){
@@ -271,9 +403,42 @@ async function openProject(id){
 async function openProjects(){
   $('projectsDialog').showModal();$('projectsList').textContent='正在读取本机创作…';
   try{const result=await api('GET','/api/node-studio/workflows'),rows=result.workflows||[];
-    $('projectsList').innerHTML=rows.length?rows.map(row=>`<button class="ns-project-row" data-project="${escape(row.id)}" ${!catalogReady?'disabled':''}>${safeImage(row.thumbnailUrl||row.thumbnail||row.imageUrl)?`<img src="${escape(safeImage(row.thumbnailUrl||row.thumbnail||row.imageUrl))}" alt="">`:icon('folder')}<span><strong>${escape(row.title)}</strong><small>${row.nodeCount||row.order?.length||''} 个工作区</small></span><time>${escape((row.updatedAt||'').slice(0,10))}</time></button>`).join(''):'还没有保存的创作。上传照片即可开始。';
+    $('projectsList').innerHTML=rows.length?rows.map(row=>`<article class="ns-project-list-item"><button class="ns-project-row" data-project="${escape(row.id)}" ${!catalogReady?'disabled':''}>${safeImage(row.thumbnailUrl||row.thumbnail||row.imageUrl)?`<img src="${escape(safeImage(row.thumbnailUrl||row.thumbnail||row.imageUrl))}" alt="">`:icon('folder')}<span><strong>${escape(row.title)}</strong><small>${row.nodeCount||row.order?.length||''} 个工作区</small></span><time>${escape((row.updatedAt||'').slice(0,10))}</time></button><button class="ns-project-delete ns-button ns-quiet" data-delete-project="${escape(row.id)}" aria-label="删除创作：${escape(row.title||'未命名创作')}">删除</button></article>`).join(''):'还没有保存的创作';
     $('projectsList').querySelectorAll('[data-project]').forEach(button=>button.onclick=()=>openProject(button.dataset.project).catch(()=>{}));
+    $('projectsList').querySelectorAll('[data-delete-project]').forEach(button=>button.onclick=()=>deleteProject(button.dataset.deleteProject));
   }catch(error){$('projectsList').textContent=error.message;}
+}
+function resetToEntry(){
+  entryExperience.cancelTransition();workflow=null;persistence.bind({revision:0});front=null;back=null;
+  uploadTickets.front++;uploadTickets.back++;uploadPending.front=false;uploadPending.back=false;
+  $('frontFile').value='';$('backFile').value='';$('entry').hidden=false;$('studio').hidden=true;$('workspace').hidden=true;
+  $('startButton').disabled=true;$('frontLabel').textContent='放入服装正面照片';$('frontPreview').innerHTML=entryFrontPlaceholder;$('backPreview').textContent='＋';
+  $('projectTitleButton').textContent='未命名创作';$('saveState').textContent='本机工作区';entryExperience.uploadState();
+}
+async function deleteProject(id){
+  if(!id||booting||projectOpening||runBusy||addingPictures)return;
+  projectOpening=true;
+  let deletingCurrent=false;
+  try{
+    const endpoint=`/api/node-studio/workflows/${encodeURIComponent(id)}`;
+    let preview=await api('GET',`${endpoint}/deletion`);
+    const bytes=Number(preview.estimatedBytes)||0,size=bytes>=1048576?`${(bytes/1048576).toFixed(1)} MB`:`${Math.ceil(bytes/1024)} KB`;
+    if(!confirm(`删除「${preview.title||'未命名创作'}」？\n\n将删除方案和仅供它使用的素材，预计释放 ${size}\n其他方案使用中的素材会保留\n此操作无法撤销`))return;
+    projectOpening=true;deletingCurrent=workflow?.id===id;
+    if(deletingCurrent){
+      tracker.stop();await leaveWorkspace(false);await saveWorkflow();
+      // Refresh the revision after settling this window's pending changes.
+      preview=await api('GET',`${endpoint}/deletion`);
+    }
+    const result=await api('DELETE',endpoint,{expectedRevision:preview.revision,deleteUnusedAssets:true});
+    if(deletingCurrent){resetToEntry();if(localStorage.getItem('relic-node-last-project')===id)localStorage.removeItem('relic-node-last-project');}
+    await refreshEntryHistory();
+    if($('projectsDialog').open)await openProjects();
+    const freed=Number(result.freedBytes)||0;notify(`创作已删除，释放 ${freed>=1048576?(freed/1048576).toFixed(1)+' MB':Math.ceil(freed/1024)+' KB'}`);
+  }catch(error){
+    notify(error.message);
+    if($('projectsDialog').open)await openProjects();await refreshEntryHistory();
+  }finally{projectOpening=false;if(deletingCurrent)tracker.start();}
 }
 function openStash(){
   const rows=[];
@@ -283,14 +448,26 @@ function openStash(){
   $('stashList').querySelectorAll('[data-restore]').forEach(button=>button.onclick=()=>{const row=rows[Number(button.dataset.restore)];try{if(row.detached){restoreShelfNode(row.node.id);}else changed(restoreVersion(workflow,row.node.id,row.version.id));$('stashDialog').close();focusNode();}catch(error){notify(error.message);}});$('stashDialog').showModal();
 }
 function setupEvents(){
+  for(const id of ['aiSettingsButton','workspaceAiSettingsButton']){
+    $(id).innerHTML=icon('settings')+'<span>AI 设置</span>';
+    $(id).onclick=()=>globalAiSettings.open('assistant');
+  }
   $('frontFile').onchange=event=>{const file=event.target.files[0];if(file)setEntryFile(file,'front');};$('backFile').onchange=event=>{const file=event.target.files[0];if(file)setEntryFile(file,'back');};
   $('frontDrop').onkeydown=event=>{if(['Enter',' '].includes(event.key)){event.preventDefault();$('frontFile').click();}};
   $('backFile').closest('label').onkeydown=event=>{if(['Enter',' '].includes(event.key)){event.preventDefault();$('backFile').click();}};
   $('frontDrop').ondragover=event=>{event.preventDefault();$('frontDrop').classList.add('drag-over');};$('frontDrop').ondragleave=()=>$('frontDrop').classList.remove('drag-over');$('frontDrop').ondrop=event=>{event.preventDefault();$('frontDrop').classList.remove('drag-over');const file=event.dataTransfer.files[0];if(file)setEntryFile(file,'front');};
   $('startButton').onclick=start;
+  $('floatButton').onclick=floatSelected;$('connectButton').onclick=openConnectDialog;
+  $('addGarmentButton').onclick=()=>$('canvasGarmentFile').click();
+  $('addReferenceButton').onclick=()=>$('canvasReferenceFile').click();
+  $('canvasGarmentFile').onchange=async event=>{await addPictureFiles(event.target.files,'garment_input');event.target.value='';};
+  $('canvasReferenceFile').onchange=async event=>{await addPictureFiles(event.target.files,'image_reference');event.target.value='';};
   $('sampleButton').onclick=async()=>{try{const response=await fetch('/resources/garments/demo_coat_front.png');if(!response.ok)throw Error('示例图暂不可用。');const file=new File([await response.blob()],'示例服装.png',{type:'image/png'});await setEntryFile(file,'front');}catch(error){notify(error.message);}};
-  $('saveButton').onclick=async()=>{try{await workspace?.save?.();await saveWorkflow();notify(workflow?'创作已保存到本机。':'先上传服装，开始一份创作。');}catch(error){notify(error.message);}};
-  $('projectsButton').onclick=openProjects;$('helpButton').onclick=()=>$('helpDialog').showModal();$('stashButton').onclick=openStash;
+  $('saveButton').onclick=async()=>{try{if(currentWorkspaceId)await saveCurrentWorkspace(true);else{await saveWorkflow();notify(workflow?'创作已保存到本机。':'先上传服装，开始一份创作。');}}catch(error){notify(error.message);}};
+  $('saveWorkspace').onclick=()=>saveCurrentWorkspace(true).catch(error=>{if(error.name!=='AbortError')notify(error.message);});
+  $('projectsButton').onclick=openProjects;
+  for(const id of ['helpButton','workspaceHelpButton'])$(id).onclick=()=>$('helpDialog').showModal();
+  $('stashButton').onclick=openStash;
   document.querySelectorAll('dialog [data-close]').forEach(button=>button.onclick=()=>button.closest('dialog').close());
   $('enterButton').onclick=()=>enterWorkspace();$('leaveWorkspace').onclick=()=>leaveWorkspace();$('fitButton').innerHTML=icon('expand');$('fitButton').onclick=()=>graphViewport.fit();
   $('zoomOut').onclick=()=>graphViewport.setZoom(graphViewport.getZoom()/1.2);$('zoomIn').onclick=()=>graphViewport.setZoom(graphViewport.getZoom()*1.2);$('zoomValue').onclick=()=>graphViewport.setZoom(1);$('branchButton').onclick=()=>forkFromSelected();
@@ -298,7 +475,8 @@ function setupEvents(){
   $('leftButton').onclick=()=>{try{const lane=currentLane();changed(moveNode(workflow,workflow.selectedNodeId,lane.order.indexOf(workflow.selectedNodeId)-1,catalog,lane.id));focusNode();}catch(error){notify(error.message);}};
   $('rightButton').onclick=()=>{try{const lane=currentLane();changed(moveNode(workflow,workflow.selectedNodeId,lane.order.indexOf(workflow.selectedNodeId)+1,catalog,lane.id));focusNode();}catch(error){notify(error.message);}};
   $('projectTitleButton').onclick=()=>{if(!workflow)return;const value=prompt('给这份创作起个名字',workflow.title);if(value?.trim())changed({...workflow,title:value.trim().slice(0,100)});};
-  $('newButton').onclick=async()=>{if(booting||projectOpening||runBusy)return;projectOpening=true;try{entryExperience.cancelTransition();await leaveWorkspace(false);await saveWorkflow();workflow=null;front=null;back=null;uploadTickets.front++;uploadTickets.back++;uploadPending.front=false;uploadPending.back=false;$('frontFile').value='';$('backFile').value='';$('entry').hidden=false;$('studio').hidden=true;$('startButton').disabled=true;$('frontLabel').textContent='放入新的服装正面照片';$('frontPreview').innerHTML=entryFrontPlaceholder;$('backPreview').textContent='＋';$('projectTitleButton').textContent='未命名创作';$('saveState').textContent='本机工作区';clearTimeout(toastTimer);$('toast').hidden=true;entryExperience.uploadState();await refreshEntryHistory();}catch(error){notify(error.message);}finally{projectOpening=false;}};
+  $('newButton').onclick=async()=>{if(booting||projectOpening||runBusy||addingPictures)return;projectOpening=true;try{await leaveWorkspace(false);if(currentWorkspaceId)throw Error('请先保存当前工作区');await saveWorkflow();resetToEntry();clearTimeout(toastTimer);$('toast').hidden=true;void refreshEntryHistory();}catch(error){notify(error.message);}finally{projectOpening=false;}};
+  document.querySelector('.ns-brand').onclick=event=>{event.preventDefault();$('newButton').click();};
   $('ribbonViewport').addEventListener('dragover',event=>{
     if(!readDrop(event))return;
     const rect=$('ribbonViewport').getBoundingClientRect(),edge=48;
@@ -309,18 +487,22 @@ function setupEvents(){
   },{capture:true});
   $('ribbonViewport').ondragover=event=>{
     if(!workflow)return;
-    const data=readDrop(event),def=definitionFor(catalog,data?.type||findNode(workflow,data?.id)?.type);
-    if(!workflow||!def||def.placement==='attachment'||!backgroundDropPosition(event))return;
+    const data=readDrop(event);if(!data)return;
+    const def=data.kind==='route'?null:definitionFor(catalog,data.type||findNode(workflow,data.id)?.type);
+    if(data.kind!=='route'&&!def)return;
     event.preventDefault();event.dataTransfer.dropEffect=data.kind==='insert'?'copy':'move';
+    $('ribbonViewport').classList.add('is-canvas-drop');
   };
   $('ribbonViewport').ondrop=event=>{
     event.preventDefault();const data=readDrop(event);
-    if(data&&workflow){const position=backgroundDropPosition(event);if(position)dropNode(data,position);else notify('请放到目标路线或标签之间的插入位置。');}
+    if(data&&workflow)dropNode(data,backgroundDropPosition(event,data));
+    $('ribbonViewport').classList.remove('is-canvas-drop');
     finishNodeDrag();
   };
+  $('ribbonViewport').ondragleave=event=>{if(!$('ribbonViewport').contains(event.relatedTarget))$('ribbonViewport').classList.remove('is-canvas-drop');};
   const returnTargets=[$('nodeDock'),$('stashButton')];
   for(const target of returnTargets){
-    const canReturn=event=>{const data=readDrop(event),node=data?.kind==='move'&&workflow&&findNode(workflow,data.id);return node&&node.type!=='garment_input'&&!workflow.stash?.includes(node.id);};
+    const canReturn=event=>{const data=readDrop(event),node=data?.kind==='move'&&workflow&&findNode(workflow,data.id);return node&&node.id!==workflow.order[0]&&!['branch_create','branch_merge'].includes(node.type)&&!workflow.stash?.includes(node.id);};
     target.ondragover=event=>{if(!canReturn(event))return;event.preventDefault();event.stopPropagation();event.dataTransfer.dropEffect='move';target.classList.add('is-return-active');$('ribbon').querySelectorAll('.is-insert-active').forEach(item=>item.classList.remove('is-insert-active'));};
     target.ondragleave=event=>{if(!target.contains(event.relatedTarget))target.classList.remove('is-return-active');};
     target.ondrop=event=>{if(!canReturn(event))return;event.preventDefault();event.stopPropagation();const data=readDrop(event);try{returnNodeToShelf(data.id);}catch(error){notify(error.message);}finally{finishNodeDrag();}};
@@ -331,14 +513,22 @@ function setupEvents(){
     $('dockDropHint').hidden=!isMove;$('dockHelp').hidden=isMove;
     $('dockDropHint').textContent=fromShelf?'拖到主线连接处，重新接入这次尝试':'放回底部，收进方案架 · 输出会保留';
   });
-  window.addEventListener('relic-node-drag-end',()=>{document.body.classList.remove('ns-drag-returnable');$('dockDropHint').hidden=true;$('dockHelp').hidden=false;if(pendingStudioRender){pendingStudioRender=false;renderStudio();focusNode();}});
+  window.addEventListener('relic-node-drag-end',()=>{document.body.classList.remove('ns-drag-returnable');$('ribbonViewport').classList.remove('is-canvas-drop');$('dockDropHint').hidden=true;$('dockHelp').hidden=false;if(pendingStudioRender){pendingStudioRender=false;renderStudio();}});
   document.addEventListener('keydown',event=>{
-    const typing=event.target.matches('input,textarea,select,[contenteditable=true]');if(typing||document.querySelector('dialog[open]'))return;
+    if(event.defaultPrevented||event.isComposing||document.querySelector('dialog[open]'))return;
+    if(event.key==='Escape'){
+      const menu=[...$('workspaceActions').querySelectorAll('details[open]')].at(-1);
+      if(menu){event.preventDefault();menu.open=false;menu.querySelector('summary')?.focus();return;}
+      if(!$('workspace').hidden){event.preventDefault();event.stopPropagation();leaveWorkspace();}
+      return;
+    }
+    const typing=event.target.matches('input,textarea,select,[contenteditable=true]');
+    if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();(currentWorkspaceId?saveCurrentWorkspace(true):saveWorkflow()).catch(error=>notify(error.message));return;}
+    if(typing)return;
     if(event.code==='Space'&&workflow&&$('workspace').hidden){event.preventDefault();enterWorkspace();}
-    else if(event.key==='Escape'&&!$('workspace').hidden){event.preventDefault();leaveWorkspace();}
     else if(event.key==='Delete'&&workflow&&$('workspace').hidden){event.preventDefault();try{returnNodeToShelf(workflow.selectedNodeId);}catch(error){notify(error.message);}}
     else if(event.altKey&&workflow&&$('workspace').hidden&&['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();$(event.key==='ArrowLeft'?'leftButton':'rightButton').click();}
-    else if((event.ctrlKey||event.metaKey)&&event.key==='s'){event.preventDefault();saveWorkflow().catch(error=>notify(error.message));}
+    else if((event.ctrlKey||event.metaKey)&&event.key==='s'){event.preventDefault();(currentWorkspaceId?saveCurrentWorkspace(true):saveWorkflow()).catch(error=>notify(error.message));}
   });
   window.addEventListener('beforeunload',event=>{if(persistence.generation>persistence.savedGeneration){event.preventDefault();event.returnValue='';}});
 }
@@ -350,5 +540,5 @@ async function boot(){
   ]);
 }
 // A small read-only facade makes integration probes inspect public state, not internals.
-window.RelicNodeStudio={getWorkflow:()=>workflow?copy(workflow):null,getCatalog:()=>copy(catalog),openNode:enterWorkspace,save:saveWorkflow};
+window.RelicNodeStudio={getWorkflow:()=>workflow?copy(workflow):null,getCatalog:()=>copy(catalog),openNode:enterWorkspace,save:saveWorkflow,getPracticeState:()=>practice.getState()};
 boot();

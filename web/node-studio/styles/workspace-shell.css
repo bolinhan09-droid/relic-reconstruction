@@ -1,0 +1,40 @@
+/* A single workspace bar leaves the rest of the window for creating. */
+body.ns-in-workspace > .ns-topbar { display:none; }
+.ns-workspace { inset:0; }
+.ns-workspace-header { height:60px; min-height:60px; padding:8px 18px; gap:16px; flex-wrap:nowrap; }
+.ns-workspace-heading { flex:none; min-width:0; }
+.ns-workspace-heading h2 { white-space:nowrap; font-size:16px; }
+.ns-workspace-heading > span:empty { display:none; }
+.ns-workspace-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex:1; min-width:0; }
+.ns-workspace-actions:empty { display:none; }
+.ns-workspace-header .ns-workspace-status { margin-left:auto; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex-shrink:2; }
+.ns-workspace-header .ns-button { min-height:40px; flex:none; }
+.ns-workspace-header #saveWorkspace { min-width:74px; }
+.ns-workspace-content { min-height:0; padding:0; }
+.ns-workspace-content:has(> .ns-legacy-workspace) { overflow:hidden; }
+.ns-workspace-content > .ns-workspace-mount { min-height:100%; }
+.ns-workspace .ns-legacy-workspace { min-height:0!important; gap:0!important; }
+.ns-workspace .ns-legacy-workspace > iframe { min-height:0!important; border:0!important; border-radius:0!important; }
+.ns-workspace-header kbd { font-size:10px; }
+@media(max-width:1200px) {
+  .ns-workspace-header { padding-inline:12px; gap:10px; }
+  .ns-workspace-header .ns-workspace-status { max-width:110px; }
+  .ns-workspace-actions { gap:5px; }
+}
+@media(max-width:900px) {
+  .ns-workspace-header .ns-workspace-status { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+  .ns-workspace-heading h2 { font-size:14px; }
+  .ns-workspace-header #leaveWorkspace { padding-inline:8px; }
+  .ns-workspace-actions { overflow-x:auto; justify-content:flex-start; scrollbar-width:thin; }
+  .ns-workspace-actions > * { flex-shrink:0; }
+}
+@media(max-width:600px) {
+  .ns-workspace-header { gap:7px; padding-inline:8px; }
+  .ns-workspace-header #leaveWorkspace kbd { display:none; }
+  .ns-workspace-header #saveWorkspace { min-width:54px; padding-inline:10px; }
+  .ns-workspace-heading { max-width:84px; overflow:hidden; }
+}
+
+.ns-global-ai-trigger { display:inline-flex; align-items:center; gap:7px; flex-shrink:0; white-space:nowrap; }
+.ns-global-ai-trigger .ns-icon { width:18px; height:18px; }
+@media(max-width:1100px) { .ns-workspace-header .ns-global-ai-trigger span { display:none; } .ns-workspace-header .ns-global-ai-trigger { min-width:40px; padding-inline:10px; } }

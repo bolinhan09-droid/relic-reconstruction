@@ -9,11 +9,37 @@ import copy
 
 
 def lanes(workflow):
-    return [{"id": "main", "label": "主线", "order": workflow.get("order", [])}, *workflow.get("branches", [])]
+    return [{"id": "main", "label": "主线", "order": workflow.get("order", [])},
+            *workflow.get("routes", []), *workflow.get("branches", [])]
 
 
 def lane_for(workflow, identifier):
     return next((lane for lane in lanes(workflow) if identifier in lane["order"]), None)
+
+
+def host_for(workflow, identifier):
+    return next((node for node in workflow["nodes"]
+                 if any(identifier in ids for ids in node.get("attachments", {}).values())), None)
+
+
+def root_lane_for(workflow, identifier):
+    """An independent canvas route never inherits the original main input."""
+    host = host_for(workflow, identifier)
+    lane = lane_for(workflow, host["id"] if host else identifier)
+    seen = set()
+    while lane and lane.get("forkId") and lane["id"] not in seen:
+        seen.add(lane["id"])
+        lane = lane_for(workflow, lane["forkId"])
+    return lane
+
+
+def scoped_ids(workflow, identifier):
+    """Inputs that may be explicitly referenced, excluding unrelated routes."""
+    result = set(preceding_ids(workflow, identifier))
+    host = host_for(workflow, identifier)
+    if host:
+        result.add(host["id"])
+    return result
 
 
 def branches_for(workflow, fork_id):
@@ -27,7 +53,7 @@ def preceding_ids(workflow, identifier, seen=None):
     seen.add(identifier)
     lane = lane_for(workflow, identifier)
     if lane is None:
-        host = next((node for node in workflow["nodes"] if any(identifier in ids for ids in node.get("attachments", {}).values())), None)
+        host = host_for(workflow, identifier)
         return preceding_ids(workflow, host["id"], seen) if host else []
     inherited = preceding_ids(workflow, lane["forkId"], seen) + [lane["forkId"]] if lane.get("forkId") else []
     return inherited + lane["order"][:lane["order"].index(identifier)]
@@ -126,3 +152,21 @@ def validate_structure(workflow, by_id):
         selected = node["params"].get("selectedCandidateIds", [])
         if not isinstance(selected, list) or any(not isinstance(identifier, str) or identifier not in by_id for identifier in selected) or len(selected) != len(set(selected)):
             raise ValueError("合拢候选须为不同的有效节点编号")
+    # Saved outputs keep their historical provenance; only live input params
+    # form dependencies. An explicit cross-route reference must use a merge.
+    for node in workflow["nodes"]:
+        params = node.get("params", {})
+        allowed = scoped_ids(workflow, node["id"])
+        if node["type"] == "blend_create":
+            merge = merge_for(workflow, node)
+            if merge:
+                allowed.update(candidate["nodeId"] for candidate in merge_candidates(workflow, merge, all_candidates=True))
+            else:
+                allowed.update(workflow.get("stash", []))
+        for key in ("sourceNodeId", "baseNodeId", "targetNodeId"):
+            identifier = params.get(key)
+            if identifier and identifier not in allowed:
+                raise ValueError("节点来源必须位于当前路线的上游；其他方案请通过合拢连接")
+        for key in ("sourceNodeIds", "candidateIds"):
+            if any(identifier not in allowed for identifier in params.get(key, [])):
+                raise ValueError("候选来源不属于当前路线；其他方案请通过合拢连接")

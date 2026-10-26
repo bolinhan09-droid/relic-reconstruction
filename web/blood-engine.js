@@ -62,39 +62,65 @@
   function createSplatter(options={},width=1,height=1){
     const d=dimensions(width,height),stroke=baseStroke(options,'splatter'),origin=unit(options.origin),target=unit(options.target||options.origin);
     const vx=(target.x-origin.x)*d.width,vy=(target.y-origin.y)*d.height,pull=Math.hypot(vx,vy)/d.short;
-    const force=clamp(finite(options.force,pull/.35)),spread=clamp(finite(options.spread,.32)),amount=clamp(finite(options.amount,.5));
+    const force=clamp(finite(options.force,pull/.35)),spread=clamp(finite(options.spread,.48)),amount=clamp(finite(options.amount,.55)),coverage=clamp(finite(options.coverage,.55));
     const angle=pull>1e-9?Math.atan2(vy,vx):0;
     stroke.points=[{...origin},{...target}];stroke.direction=angle;stroke.spread=spread;
-    stroke.bloodParameters={origin:{...origin},target:{...target},force,spread,amount};
+    stroke.bloodParameters={origin:{...origin},target:{...target},force,spread,amount,coverage};
     if(!amount||!stroke.opacity)return stroke;
     const emit=emitters(stroke,d,LIMITS.splatterShapes),rand=random(stroke.seed),palette=tones(stroke.color);
     const x=origin.x*d.width,y=origin.y*d.height,dx=Math.cos(angle),dy=Math.sin(angle),nx=-dy,ny=dx;
-    const reach=d.short*(.017+Math.pow(force,.92)*.46),cone=(.065+spread*.92)*(.68+force*.32);
+    // Coverage controls the canvas footprint, independently of droplet size and
+    // density. Force still controls travel and elongation; it is never a request
+    // to enlarge every droplet. A broad setting can cover a cape in one gesture.
+    const reach=d.short*(.045+coverage*.96)*(.12+Math.pow(force,.85)*.88),cone=.10+spread*1.55;
     const detail=stroke.effectSubtype?(stroke.effectParameters?.detail??.55):null;
-    const mainRadius=d.short*stroke.size*(.17+amount*.08),count=Math.round((20+amount*98+force*28)*(detail===null?1:.65+detail*.65)),primaryCount=1+Math.round(amount*2.7);
-    // One irregular impact group anchors the spray. No repeated stroke stamps.
+    const detailLevel=detail===null?.55:detail;
+    const mainRadius=d.short*stroke.size*(.18+amount*.27)*(1+coverage*.38);
+    const count=Math.round((32+amount*112+coverage*45)*(.78+detailLevel*.38)),primaryCount=1+Math.round(amount*2.2);
+    // Connected irregular primary stains, clustered medium drops and sparse
+    // satellites share one gesture. These are authored screen marks, not a fluid
+    // solver; saved polygons remain the authority for replay and fabrication.
     for(let k=0;k<primaryCount;k++){
-      const along=(rand()-.25)*mainRadius*1.5,across=(rand()-.5)*mainRadius*1.25,cx=x+dx*along+nx*across,cy=y+dy*along+ny*across;
-      const radius=mainRadius*(k===0?.62+rand()*.22:.16+rand()*.35);
-      drop(emit,cx,cy,radius,angle+(rand()-.5)*.55,1.02+rand()*.4+force*.24,rand,palette,.46+rand()*.25,d.short*.0014,true);
+      const along=(rand()-.12)*mainRadius*2,across=(rand()-.5)*mainRadius*1.7,cx=x+dx*along+nx*across,cy=y+dy*along+ny*across;
+      const radius=mainRadius*(k===0?.72+rand()*.25:.23+rand()*.36),a=angle+(rand()-.5)*.7;
+      if(k===0){
+        // One contour with unequal lobes prevents the primary splash looking
+        // like translucent petals stacked on top of each other.
+        const lobes=Array.from({length:5},()=>({a:a+(rand()-.5)*3.9,width:.07+rand()*.13,length:.15+rand()*.55}));
+        const phase=rand()*TAU;
+        const outline=Array.from({length:64},(_,j)=>{
+          const t=j/64*TAU;
+          let rr=1+.065*Math.sin(t*3+phase)+.035*Math.sin(t*9-phase);
+          for(const lobe of lobes){const delta=Math.atan2(Math.sin(t-lobe.a),Math.cos(t-lobe.a));rr+=lobe.length*Math.exp(-delta*delta/(2*lobe.width*lobe.width));}
+          const forward=Math.cos(t-a),side=Math.sin(t-a);
+          return {x:cx+(Math.cos(a)*forward*(1+force*.18)-Math.sin(a)*side)*radius*rr,y:cy+(Math.sin(a)*forward*(1+force*.18)+Math.cos(a)*side)*radius*rr};
+        });
+        emit.polygon(outline.map(p=>({x:cx+(p.x-cx)*1.04,y:cy+(p.y-cy)*1.04})),palette[2],.08);
+        emit.polygon(outline,palette[2],.9);
+        emit.polygon(rotatedOutline(cx-radius*.12,cy+radius*.06,radius*.42,radius*.3,a,rand,.14,24),palette[1],.18);
+      }else drop(emit,cx,cy,radius,a,1.05+rand()*.5+force*.2,rand,palette,.8+rand()*.15,d.short*.0014,true);
     }
+    const clusters=Array.from({length:5},(_,j)=>({travel:.1+j*.16+(rand()-.5)*.1,theta:(rand()-.5)*cone*1.2}));
     for(let i=0;i<count;i++){
-      const group=i%7,travel=group<2?.025+rand()*.22:group<5?.13+Math.pow(rand(),1.3)*.44:.42+Math.pow(rand(),.8)*.58;
-      // A sum of uniform deviates concentrates droplets in a loose directional fan.
-      const theta=(rand()+rand()+rand()-1.5)*cone*.68;
-      const forward=reach*travel*Math.cos(theta),lateral=reach*travel*Math.sin(theta);
+      const group=i%10,cluster=clusters[i%clusters.length];
+      // Mix loose clusters and isolated satellites. Avoid an evenly populated
+      // triangular fan or a repeated row of identical circular stamps.
+      const travel=group<6?clamp(cluster.travel+(rand()+rand()-1)*.17,.02,1):.04+Math.pow(rand(),.75)*.96;
+      const theta=group<6?cluster.theta+(rand()+rand()-1)*cone*.26:(rand()+rand()-1)*cone*.76;
+      const forward=reach*travel*Math.cos(theta),lateral=reach*travel*Math.sin(theta)+(rand()-.5)*mainRadius*.8;
       const cx=x+dx*forward+nx*lateral,cy=y+dy*forward+ny*lateral;
-      const near=1-travel,r=d.short*stroke.size*(.0035+Math.pow(rand(),3.8)*(.015+near*.024))*(.76+amount*.3);
-      const elongation=rand()<.72?(.78+rand()*.68):(1.3+force*(.35+travel*1.8));
-      const dropAngle=angle+theta+(rand()-.5)*.55;
-      drop(emit,cx,cy,r,dropAngle,elongation,rand,palette,.48+rand()*.4,d.short*.0014);
+      const near=1-travel,scale=group<2?.055+rand()*.105:group<6?.016+Math.pow(rand(),1.5)*.052:.004+Math.pow(rand(),2)*.018;
+      const r=d.short*stroke.size*scale*(.65+amount*.65)*(.6+near*.65)*(1-detailLevel*.22);
+      const elongation=rand()<.7?(.85+rand()*.65):(1.35+force*(.4+travel*1.9));
+      const dropAngle=angle+theta+(rand()-.5)*.7;
+      drop(emit,cx,cy,r,dropAngle,elongation,rand,palette,.68+rand()*.28,d.short*.0014,false);
       // Sparse fine streak fragments vary in length; they are not a tail on every drop.
-      if(i%13===4&&force>.2){
-        const tx=Math.cos(dropAngle),ty=Math.sin(dropAngle),length=d.short*stroke.size*(.035+force*.18)*(.35+rand()*.65),thin=d.short*stroke.size*(.0018+rand()*.0035);
+      if(i%19===4&&force>.2){
+        const tx=Math.cos(dropAngle),ty=Math.sin(dropAngle),length=d.short*stroke.size*(.045+force*.23)*(.35+rand()*.65),thin=Math.max(r*.16,d.short*stroke.size*.002);
         emit.polygon(rotatedOutline(cx-tx*length*.28,cy-ty*length*.28,length*.52,thin,dropAngle,rand,.08,12,.48),palette[2],.32+rand()*.25);
       }
       // Small local companions make clusters rather than uniformly scattered dots.
-      if(group<4&&rand()>.6){const a=rand()*TAU,distance=r*(1.7+rand()*3),tiny=r*(.22+rand()*.2);emit.ellipse(cx+Math.cos(a)*distance,cy+Math.sin(a)*distance,tiny,tiny*(.8+rand()*.2),palette[2],.4+rand()*.25);}
+      if(group<3&&rand()>.55){const a=rand()*TAU,distance=r*(1.7+rand()*3),tiny=r*(.18+rand()*.24);emit.ellipse(cx+Math.cos(a)*distance,cy+Math.sin(a)*distance,tiny,tiny*(.8+rand()*.2),palette[2],.4+rand()*.25);}
     }
     appearance(stroke,d);return stroke;
   }

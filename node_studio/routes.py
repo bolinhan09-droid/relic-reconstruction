@@ -44,6 +44,40 @@ def register_node_studio_routes(app, core):
     def node_workflow_history(workflow_id: str):
         return {"history": store.history(workflow_id)}
 
+    # Keep existing history links downloadable as complete editable JSON even
+    # though the on-disk document now shares immutable geometry chunks.
+    @app.get("/data/node-studio/workflows/{workflow_id}/history/{filename}")
+    def node_workflow_history_document(workflow_id: str, filename: str):
+        return store.get_history(workflow_id, filename)
+
+    @app.get("/data/node-studio/workflows/{workflow_id}/workflow.json")
+    def node_workflow_document(workflow_id: str):
+        return store.get(workflow_id)
+
+    @app.get("/api/node-studio/workflows/{workflow_id}/deletion")
+    def node_workflow_deletion_preview(workflow_id: str):
+        from .deletion import deletion_preview
+        return deletion_preview(store, core, workflow_id)
+
+    @app.delete("/api/node-studio/workflows/{workflow_id}")
+    def delete_node_workflow(workflow_id: str, payload: dict, request: Request):
+        core.require_local_origin(request)
+        from .deletion import delete_workflow
+        return delete_workflow(store, core, workflow_id, payload.get("expectedRevision"),
+                               payload.get("deleteUnusedAssets", True))
+
+    @app.get("/api/node-studio/workflows/{workflow_id}/nodes/{node_id}/making-input")
+    def making_input_status(workflow_id: str, node_id: str):
+        from .making_bridge import inspect_input
+        with store.lock:
+            workflow = store.get(workflow_id)
+            node = next((entry for entry in workflow["nodes"] if entry["id"] == node_id), None)
+            if node is None:
+                fail("节点不存在", 404)
+            if node["type"] != "stencil_export":
+                fail("请在模板制作节点检查制作输入")
+            return inspect_input(core, workflow, node)
+
     @app.post("/api/node-studio/workflows/{workflow_id}/nodes/{node_id}/run")
     def run_node_workflow(workflow_id: str, node_id: str, payload: dict, request: Request):
         core.require_local_origin(request)

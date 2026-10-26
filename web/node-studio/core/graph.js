@@ -2,12 +2,40 @@
  * its parent lane; independent branches contain the exploratory operations. */
 const copy=value=>structuredClone(value);
 const find=(workflow,id)=>workflow.nodes.find(node=>node.id===id);
-export const getLanes=workflow=>[{id:'main',label:'主线',order:workflow.order},...(workflow.branches || [])];
+export const getLanes=workflow=>[{id:'main',label:'主线',order:workflow.order},...(workflow.routes || []),...(workflow.branches || [])];
 export const laneForNode=(workflow,id)=>getLanes(workflow).find(lane=>lane.order.includes(id)) || null;
 export const laneById=(workflow,id='main')=>getLanes(workflow).find(lane=>lane.id===id);
 export const branchesFor=(workflow,id)=>(workflow.branches || []).filter(lane=>lane.forkId===id);
 export const hostFor=(workflow,id)=>workflow.nodes.find(node=>Object.values(node.attachments || {}).some(ids=>ids.includes(id)));
 export const structural=node=>['branch_create','branch_merge'].includes(node?.type);
+export function rootLaneForNode(workflow,id) {
+  let lane=laneForNode(workflow,hostFor(workflow,id)?.id || id);const seen=new Set();
+  while(lane?.forkId && !seen.has(lane.id)) {seen.add(lane.id);lane=laneForNode(workflow,lane.forkId);}
+  return lane || null;
+}
+export function scopedNodeIds(workflow,id) {
+  const result=new Set(precedingNodeIds(workflow,id)),host=hostFor(workflow,id);
+  if(host) result.add(host.id);
+  return result;
+}
+export function allowedInputIds(workflow,node) {
+  const allowed=scopedNodeIds(workflow,node.id);
+  if(node.type==='blend_create') {
+    const merge=mergeFor(workflow,node);
+    for(const id of merge?collectMergeCandidates(workflow,merge,{all:true}).map(item=>item.nodeId):(workflow.stash || [])) allowed.add(id);
+  }
+  return allowed;
+}
+export function clearInvalidInputs(workflow) {
+  for(const node of workflow.nodes) {
+    const allowed=allowedInputIds(workflow,node),params=node.params || {};
+    for(const key of ['sourceNodeId','baseNodeId','targetNodeId']) if(params[key] && !allowed.has(params[key])) delete params[key];
+    for(const key of ['sourceNodeIds','candidateIds']) if(Array.isArray(params[key])) {
+      const prior=params[key];params[key]=prior.filter(id=>allowed.has(id));
+      if(prior.length!==params[key].length && key==='candidateIds') {delete params.weights;delete params.featureSources;}
+    }
+  }
+}
 
 export function precedingNodeIds(workflow,nodeId,seen=new Set()) {
   if(seen.has(nodeId)) return [];
@@ -73,14 +101,15 @@ export function markStructureChanges(before,after) {
   }
 }
 export function assertGraph(workflow) {
-  if(!workflow || !Array.isArray(workflow.nodes) || !Array.isArray(workflow.order) || (workflow.branches!==undefined && !Array.isArray(workflow.branches))) throw Error('工作流格式不正确。');
-  const ids=workflow.nodes.map(node=>node.id);if(ids.length!==new Set(ids).size) throw Error('存在重复节点。');
-  if(find(workflow,workflow.order[0])?.type!=='garment_input') throw Error('主线需要真实服装起点。');
+  if(!workflow || !Array.isArray(workflow.nodes) || !Array.isArray(workflow.order) || ['branches','routes'].some(key=>workflow[key]!==undefined && !Array.isArray(workflow[key]))) throw Error('工作流格式不正确。');
+  const ids=workflow.nodes.map(node=>node.id);if(ids.length!==new Set(ids).size || ids.some(id=>typeof id!=='string' || !/^[A-Za-z0-9_-]{1,100}$/.test(id))) throw Error('节点编号无效或重复。');
+  if(workflow.order.length && find(workflow,workflow.order[0])?.type!=='garment_input') throw Error('主线需要真实服装起点。');
   const assigned=new Set(),laneIds=new Set();
   for(const lane of getLanes(workflow)) {
-    if(!lane.id || laneIds.has(lane.id) || !Array.isArray(lane.order)) throw Error('探索路线无效。');laneIds.add(lane.id);
+    if(typeof lane.id!=='string' || !/^[A-Za-z0-9_-]{1,100}$/.test(lane.id) || laneIds.has(lane.id) || !Array.isArray(lane.order)) throw Error('探索路线无效。');laneIds.add(lane.id);
     for(const id of lane.order) {if(!ids.includes(id) || assigned.has(id)) throw Error('一个节点只能放在一条路线。');assigned.add(id);}
-    if(lane.id!=='main' && find(workflow,lane.forkId)?.type!=='branch_create') throw Error('探索路线缺少有效分支起点。');
+    if((workflow.branches || []).includes(lane) && find(workflow,lane.forkId)?.type!=='branch_create') throw Error('探索路线缺少有效分支起点。');
+    if((workflow.routes || []).includes(lane) && (lane.forkId || !lane.order.length || ['x','y'].some(key=>typeof lane[key]!=='number' || !Number.isFinite(lane[key]) || Math.abs(lane[key])>100000))) throw Error('独立路线位置无效。');
   }
   for(const id of workflow.stash || []) {if(!ids.includes(id) || assigned.has(id)) throw Error('方案架与路线不能重复。');assigned.add(id);}
   for(const node of workflow.nodes) for(const children of Object.values(node.attachments || {})) {
@@ -94,6 +123,11 @@ export function assertGraph(workflow) {
     const merges=workflow.nodes.filter(item=>item.type==='branch_merge' && item.params?.forkId===fork.id);
     if(merges.length!==1 || lane.order.indexOf(merges[0].id)!==lane.order.indexOf(fork.id)+1) throw Error('分支与合拢应相邻，创作节点请放入其中的探索路线。');
     if(branchesFor(workflow,fork.id).length<2 || branchesFor(workflow,fork.id).length>12) throw Error('每个分叉需要 2–12 条探索路线。');
+  }
+  for(const node of workflow.nodes) {
+    const allowed=allowedInputIds(workflow,node),params=node.params || {};
+    if(['sourceNodeIds','candidateIds'].some(key=>params[key]!==undefined && !Array.isArray(params[key]))) throw Error('候选来源须为节点编号列表。');
+    if([params.sourceNodeId,params.baseNodeId,params.targetNodeId,...(params.sourceNodeIds || []),...(params.candidateIds || [])].some(id=>id && !allowed.has(id))) throw Error('来源不属于当前路线，请通过合拢连接其他方案。');
   }
   const dependencies=dependencyMap(workflow),visiting=new Set(),visited=new Set();
   const visit=id=>{if(visiting.has(id)) throw Error('节点连接不能形成循环。');if(visited.has(id)) return;if(!dependencies.has(id)) throw Error('候选引用了不存在的节点。');visiting.add(id);for(const parent of dependencies.get(id)) visit(parent);visiting.delete(id);visited.add(id);};
